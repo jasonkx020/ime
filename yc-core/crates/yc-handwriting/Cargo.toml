@@ -1,0 +1,8 @@
+[package]
+name = "yc-handwriting"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-types = { path = "../yc-types" }
+zeroize.workspace = true

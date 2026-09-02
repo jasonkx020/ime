@@ -7,6 +7,29 @@ pub const YC_ERR_INTERNAL: i32 = -3;
 pub const MAX_CANDIDATES: usize = 9;
 pub const MAX_COMPOSING_LEN: usize = 64;
 pub const MAX_CAND_TEXT_LEN: usize = 64;
+pub const MAX_HW_POINTS: usize = 256;
+pub const MAX_HW_STROKES: usize = 16;
+
+/// Normalized stroke point for FFI (`yc_hw_push_stroke`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct YcStrokePoint {
+    pub x: f32,
+    pub y: f32,
+    pub t: u64,
+    pub pressure: f32,
+}
+
+impl Default for YcStrokePoint {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            t: 0,
+            pressure: 1.0,
+        }
+    }
+}
 
 /// Fixed-size hot-path action (40 bytes).
 #[repr(C)]

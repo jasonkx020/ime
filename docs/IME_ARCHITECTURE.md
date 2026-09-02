@@ -1774,6 +1774,8 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 
 > **yc-core 已实现（M2）**：`switch_layout` / `switch_scheme` / `toggle_ascii`、`EditorInfo` 强制、`UiCommand::ReloadKeyboard`、桌面 `yc-cli` REPL 壳。
 | **M2.5** | 手写板 MVP | HandwritingPad、单字模式、端侧识别、CandBar 选词上屏 |
+
+> **yc-core 已实现（M2.5）**：`yc-handwriting` 端侧模板识别、`HandwritingService`、`yc_hw_push_stroke`、手写 `UserAction` 路由、`yc-cli` `/handwriting` `/hw demo` 演示。
 | **M3** | 皮肤更换 + 手写连写云 | 皮肤 ≤100ms；连写模式 + 上云确认（Normal） |
 | **M3.5** | 语言包 OTA | PluginHost + 至少 1 个东南亚 LangPack（如 vi/th）；enable/disable；无需 App 更新 |
 | **M4** | AI 润色 + 隐私门禁 | 选区润色，三档 PrivacyLevel，密码框拒绝 |

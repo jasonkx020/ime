@@ -1,7 +1,7 @@
 #ifndef YC_HOT_H
 #define YC_HOT_H
 
-/* Auto-generated / hand-maintained for M0–M2. Regenerate with scripts/gen-header.ps1 */
+/* Auto-generated / hand-maintained for M0–M2.5. Regenerate with scripts/gen-header.ps1 */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -14,6 +14,8 @@
 #define YC_MAX_CANDIDATES 9
 #define YC_MAX_COMPOSING_LEN 64
 #define YC_MAX_CAND_TEXT_LEN 64
+#define YC_MAX_HW_POINTS 256
+#define YC_MAX_HW_STROKES 16
 
 /* YcHotAction.action_type */
 #define YC_ACTION_INIT 0
@@ -23,16 +25,27 @@
 #define YC_ACTION_SWITCH_LAYOUT 4   /* key_code = KeyboardLayout enum */
 #define YC_ACTION_SWITCH_SCHEME 5   /* key_code = InputScheme enum */
 #define YC_ACTION_TOGGLE_ASCII 6
+#define YC_ACTION_OPEN_HANDWRITING 7
+#define YC_ACTION_DISMISS_HANDWRITING 8
+#define YC_ACTION_RECOGNIZE_HANDWRITING 9
+#define YC_ACTION_CLEAR_HANDWRITING 10
+#define YC_ACTION_UNDO_HANDWRITING 11
 
 /* KeyboardLayout (key_code for SWITCH_LAYOUT) */
 #define YC_LAYOUT_PINYIN26 0
 #define YC_LAYOUT_QWERTY 1
 #define YC_LAYOUT_NUMERIC 2
 #define YC_LAYOUT_SYMBOL 3
+#define YC_LAYOUT_HANDWRITING_PAD 4
 
 /* InputScheme (key_code for SWITCH_SCHEME) */
 #define YC_SCHEME_PINYIN_FULL 0
 #define YC_SCHEME_QWERTY 1
+#define YC_SCHEME_HANDWRITING 2
+
+/* WritingMode (writing_mode for yc_hw_push_stroke) */
+#define YC_WRITING_SINGLE_CHAR 0
+#define YC_WRITING_CONTINUOUS 1
 
 /* EditorInfo input_type subset (Android) */
 #define YC_INPUT_CLASS_NUMBER 0x02
@@ -66,6 +79,13 @@ typedef struct YcCandidateSlot {
     uint8_t text[YC_MAX_CAND_TEXT_LEN];
 } YcCandidateSlot;
 
+typedef struct YcStrokePoint {
+    float x;
+    float y;
+    uint64_t t;
+    float pressure;
+} YcStrokePoint;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -83,6 +103,11 @@ int32_t yc_hot_submit(const YcHotAction *action);
 const uint8_t *yc_hot_arena_ptr(void);
 size_t yc_hot_arena_size(void);
 int32_t yc_hot_latest_seq(uint64_t editor_id, uint64_t *out_seq);
+
+int32_t yc_hw_push_stroke(uint64_t editor_id, const YcStrokePoint *points,
+                          uint32_t point_count, uint64_t session_stroke_id,
+                          uint32_t canvas_width, uint32_t canvas_height,
+                          uint32_t writing_mode);
 
 #ifdef __cplusplus
 }

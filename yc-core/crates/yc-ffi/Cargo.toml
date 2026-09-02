@@ -15,3 +15,4 @@ yc-lexicon = { path = "../yc-lexicon" }
 parking_lot.workspace = true
 
 [dev-dependencies]
+yc-handwriting = { path = "../yc-handwriting" }

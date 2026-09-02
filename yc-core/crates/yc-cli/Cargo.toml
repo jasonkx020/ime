@@ -10,3 +10,4 @@ path = "src/main.rs"
 [dependencies]
 yc-ffi = { path = "../yc-ffi" }
 yc-types = { path = "../yc-types" }
+yc-handwriting = { path = "../yc-handwriting" }

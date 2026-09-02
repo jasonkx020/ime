@@ -1,4 +1,4 @@
-//! Desktop CLI demo shell for yc-core (M2).
+//! Desktop CLI demo shell for yc-core (M2/M2.5).
 //! REPL over stdin/stdout, calling the real C ABI via yc-ffi.
 
 use std::ffi::CString;
@@ -6,16 +6,18 @@ use std::io::{self, BufRead, Write};
 
 use yc_ffi::{
     parse_arena, yc_core_init, yc_core_shutdown, yc_hot_arena_ptr, yc_hot_arena_size,
-    yc_hot_submit, yc_session_begin_with_input, yc_session_stop,
+    yc_hot_submit, yc_hw_push_stroke, yc_session_begin_with_input, yc_session_stop,
 };
+use yc_handwriting::templates;
 use yc_types::{
-    HotActionType, KeyboardLayout, InputScheme, YC_OK, YcHotAction, CLASS_NUMBER,
-    VARIATION_PASSWORD,
+    HotActionType, KeyboardLayout, InputScheme, YC_OK, YcHotAction, YcStrokePoint, CLASS_NUMBER,
+    VARIATION_PASSWORD, WritingMode,
 };
 
 struct App {
     editor_id: u64,
     client_seq: u64,
+    hw_stroke_id: u64,
 }
 
 impl App {
@@ -23,6 +25,7 @@ impl App {
         Self {
             editor_id: 0,
             client_seq: 0,
+            hw_stroke_id: 1,
         }
     }
 
@@ -38,6 +41,39 @@ impl App {
             reserved: [0; 8],
         };
         yc_hot_submit(&action)
+    }
+
+    fn push_template(&mut self, text: &str) -> i32 {
+        let strokes = match templates::template_strokes(text) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let mut last_rc = YC_OK;
+        for stroke in strokes {
+            let points: Vec<YcStrokePoint> = stroke
+                .points
+                .iter()
+                .map(|p| YcStrokePoint {
+                    x: p.x,
+                    y: p.y,
+                    t: p.t,
+                    pressure: p.pressure,
+                })
+                .collect();
+            last_rc = yc_hw_push_stroke(
+                self.editor_id,
+                points.as_ptr(),
+                points.len() as u32,
+                self.hw_stroke_id,
+                320,
+                240,
+                WritingMode::SingleChar.raw(),
+            );
+            if last_rc != YC_OK {
+                return last_rc;
+            }
+        }
+        last_rc
     }
 
     fn read_arena(&self) -> Option<yc_ffi::ArenaSnapshot> {
@@ -81,19 +117,26 @@ impl App {
         }
         self.editor_id = yc_session_begin_with_input(1, input_type);
         self.client_seq = 0;
+        self.hw_stroke_id = 1;
     }
 }
 
 fn print_help(stdout: &mut impl Write) {
     let _ = writeln!(stdout, "命令:");
-    let _ = writeln!(stdout, "  <拼音>           逐键输入 (KeyPress)");
-    let _ = writeln!(stdout, "  /<n>             选候选 (1-based)");
-    let _ = writeln!(stdout, "  /layout <name>   切换布局: pinyin26|qwerty|numeric|symbol");
-    let _ = writeln!(stdout, "  /scheme <name>   切换方案: pinyin|qwerty");
-    let _ = writeln!(stdout, "  /ascii           切换 ASCII 直出模式");
-    let _ = writeln!(stdout, "  /field <name>    切换输入框: default|password|number");
-    let _ = writeln!(stdout, "  /help            显示帮助");
-    let _ = writeln!(stdout, "  /quit            退出");
+    let _ = writeln!(stdout, "  <拼音>              逐键输入 (KeyPress)");
+    let _ = writeln!(stdout, "  /<n>                选候选 (1-based)");
+    let _ = writeln!(stdout, "  /layout <name>      切换布局: pinyin26|qwerty|numeric|symbol|handwriting");
+    let _ = writeln!(stdout, "  /scheme <name>      切换方案: pinyin|qwerty|handwriting");
+    let _ = writeln!(stdout, "  /ascii              切换 ASCII 直出模式");
+    let _ = writeln!(stdout, "  /handwriting        打开手写板");
+    let _ = writeln!(stdout, "  /keyboard           返回键盘");
+    let _ = writeln!(stdout, "  /hw demo <字>       模拟抬笔提交模板笔迹 (你|好|我|一|人)");
+    let _ = writeln!(stdout, "  /recognize          识别当前笔迹");
+    let _ = writeln!(stdout, "  /hwclear            清空书写区");
+    let _ = writeln!(stdout, "  /hwundo             撤销上一笔");
+    let _ = writeln!(stdout, "  /field <name>       切换输入框: default|password|number");
+    let _ = writeln!(stdout, "  /help               显示帮助");
+    let _ = writeln!(stdout, "  /quit               退出");
 }
 
 fn parse_layout(name: &str) -> Option<KeyboardLayout> {
@@ -102,6 +145,7 @@ fn parse_layout(name: &str) -> Option<KeyboardLayout> {
         "qwerty" => Some(KeyboardLayout::Qwerty),
         "numeric" => Some(KeyboardLayout::Numeric),
         "symbol" => Some(KeyboardLayout::Symbol),
+        "handwriting" | "hw" => Some(KeyboardLayout::HandwritingPad),
         _ => None,
     }
 }
@@ -110,6 +154,7 @@ fn parse_scheme(name: &str) -> Option<InputScheme> {
     match name.to_ascii_lowercase().as_str() {
         "pinyin" | "pinyinfull" => Some(InputScheme::PinyinFull),
         "qwerty" => Some(InputScheme::Qwerty),
+        "handwriting" | "hw" => Some(InputScheme::Handwriting),
         _ => None,
     }
 }
@@ -126,7 +171,7 @@ fn main() {
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let _ = writeln!(stdout, "yc-cli M2 demo — 输入 /help 查看命令");
+    let _ = writeln!(stdout, "yc-cli M2.5 demo — 输入 /help 查看命令");
     let _ = write!(stdout, "yc-cli> ");
     let _ = stdout.flush();
 
@@ -148,6 +193,43 @@ fn main() {
 
         if line == "/help" {
             print_help(&mut stdout);
+        } else if line == "/handwriting" {
+            let rc = app.submit(HotActionType::OpenHandwriting, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "打开手写板失败: {}", rc);
+            } else {
+                let _ = writeln!(stdout, "已打开手写板");
+            }
+        } else if line == "/keyboard" {
+            let rc = app.submit(HotActionType::DismissHandwriting, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "返回键盘失败: {}", rc);
+            } else {
+                let _ = writeln!(stdout, "已返回键盘");
+            }
+        } else if line == "/recognize" {
+            let rc = app.submit(HotActionType::RecognizeHandwriting, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "识别失败: {}", rc);
+            }
+        } else if line == "/hwclear" {
+            let rc = app.submit(HotActionType::ClearHandwriting, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "清空失败: {}", rc);
+            }
+        } else if line == "/hwundo" {
+            let rc = app.submit(HotActionType::UndoHandwriting, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "撤销失败: {}", rc);
+            }
+        } else if let Some(rest) = line.strip_prefix("/hw demo ") {
+            let ch = rest.trim();
+            let rc = app.push_template(ch);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "提交笔迹失败: {} (支持: 你|好|我|一|人)", rc);
+            } else {
+                let _ = writeln!(stdout, "已提交「{}」模板笔迹，输入 /recognize 识别", ch);
+            }
         } else if let Some(rest) = line.strip_prefix("/layout ") {
             if let Some(layout) = parse_layout(rest.trim()) {
                 let rc = app.submit(HotActionType::SwitchLayout, layout.raw(), 0);

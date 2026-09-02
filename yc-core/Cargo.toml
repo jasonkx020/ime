@@ -4,6 +4,7 @@ members = [
     "crates/yc-types",
     "crates/yc-lexicon",
     "crates/yc-engine",
+    "crates/yc-handwriting",
     "crates/yc-session",
     "crates/yc-ffi",
     "crates/yc-cli",

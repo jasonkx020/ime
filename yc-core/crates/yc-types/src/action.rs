@@ -1,3 +1,4 @@
+use crate::handwriting::StrokeBatch;
 use crate::mode::{InputScheme, KeyboardLayout};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +10,11 @@ pub enum HotActionType {
     SwitchLayout = 4,
     SwitchScheme = 5,
     ToggleAscii = 6,
+    OpenHandwriting = 7,
+    DismissHandwriting = 8,
+    RecognizeHandwriting = 9,
+    ClearHandwriting = 10,
+    UndoHandwriting = 11,
 }
 
 impl HotActionType {
@@ -21,12 +27,17 @@ impl HotActionType {
             4 => Some(Self::SwitchLayout),
             5 => Some(Self::SwitchScheme),
             6 => Some(Self::ToggleAscii),
+            7 => Some(Self::OpenHandwriting),
+            8 => Some(Self::DismissHandwriting),
+            9 => Some(Self::RecognizeHandwriting),
+            10 => Some(Self::ClearHandwriting),
+            11 => Some(Self::UndoHandwriting),
             _ => None,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UserAction {
     Init,
     KeyPress { key_code: u32 },
@@ -35,6 +46,12 @@ pub enum UserAction {
     SwitchLayout { layout: KeyboardLayout },
     SwitchScheme { scheme: InputScheme },
     ToggleAscii,
+    OpenHandwriting,
+    DismissHandwriting,
+    PushStrokeBatch { batch: StrokeBatch },
+    RecognizeHandwriting,
+    ClearHandwriting,
+    UndoHandwriting,
 }
 
 impl UserAction {
@@ -55,6 +72,11 @@ impl UserAction {
                 InputScheme::from_raw(key_code).map(|scheme| UserAction::SwitchScheme { scheme })
             }
             HotActionType::ToggleAscii => Some(UserAction::ToggleAscii),
+            HotActionType::OpenHandwriting => Some(UserAction::OpenHandwriting),
+            HotActionType::DismissHandwriting => Some(UserAction::DismissHandwriting),
+            HotActionType::RecognizeHandwriting => Some(UserAction::RecognizeHandwriting),
+            HotActionType::ClearHandwriting => Some(UserAction::ClearHandwriting),
+            HotActionType::UndoHandwriting => Some(UserAction::UndoHandwriting),
         }
     }
 }

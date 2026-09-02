@@ -132,7 +132,7 @@ cd yc-core
 
 产物：`libyc_ffi`（`.dll` / `.so` / `.dylib`）、[`include/yc_hot.h`](yc-core/include/yc_hot.h)。
 
-当前实现范围（M0–M2）：`yc-types`、`yc-session`、`yc-engine`（最小拼音 + ASCII/数字直出）、`yc-lexicon`（内存词表）、`yc-ffi`（热路径 C ABI + Arena）、`yc-cli`（桌面 REPL Demo 壳）。
+当前实现范围（M0–M2.5）：`yc-types`、`yc-session`、`yc-engine`（最小拼音 + ASCII/数字直出）、`yc-handwriting`（端侧模板识别）、`yc-lexicon`（内存词表）、`yc-ffi`（热路径 C ABI + Arena）、`yc-cli`（桌面 REPL Demo 壳）。
 
 
 

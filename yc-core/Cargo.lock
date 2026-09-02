@@ -150,6 +150,7 @@ name = "yc-cli"
 version = "0.1.0"
 dependencies = [
  "yc-ffi",
+ "yc-handwriting",
  "yc-types",
 ]
 
@@ -168,9 +169,18 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "yc-engine",
+ "yc-handwriting",
  "yc-lexicon",
  "yc-session",
  "yc-types",
+]
+
+[[package]]
+name = "yc-handwriting"
+version = "0.1.0"
+dependencies = [
+ "yc-types",
+ "zeroize",
 ]
 
 [[package]]
@@ -188,6 +198,7 @@ dependencies = [
  "parking_lot",
  "thiserror",
  "yc-engine",
+ "yc-handwriting",
  "yc-lexicon",
  "yc-types",
  "zeroize",

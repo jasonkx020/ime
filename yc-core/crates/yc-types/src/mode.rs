@@ -8,6 +8,7 @@ pub enum Language {
 pub enum InputScheme {
     PinyinFull = 0,
     Qwerty = 1,
+    Handwriting = 2,
 }
 
 impl InputScheme {
@@ -15,6 +16,7 @@ impl InputScheme {
         match raw {
             0 => Some(Self::PinyinFull),
             1 => Some(Self::Qwerty),
+            2 => Some(Self::Handwriting),
             _ => None,
         }
     }
@@ -30,6 +32,7 @@ pub enum KeyboardLayout {
     Qwerty = 1,
     Numeric = 2,
     Symbol = 3,
+    HandwritingPad = 4,
 }
 
 impl KeyboardLayout {
@@ -39,6 +42,7 @@ impl KeyboardLayout {
             1 => Some(Self::Qwerty),
             2 => Some(Self::Numeric),
             3 => Some(Self::Symbol),
+            4 => Some(Self::HandwritingPad),
             _ => None,
         }
     }

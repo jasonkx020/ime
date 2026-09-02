@@ -28,6 +28,7 @@ fn session_isolation_composing() {
         core.scheduler
             .handle(
                 &mut core.sessions,
+                &mut core.handwriting,
                 a,
                 UserAction::KeyPress {
                     key_code: ch as u32,
@@ -40,7 +41,12 @@ fn session_isolation_composing() {
     core.scheduler.on_session_created(b);
     let outcome = core
         .scheduler
-        .handle(&mut core.sessions, b, UserAction::Init)
+        .handle(
+            &mut core.sessions,
+            &mut core.handwriting,
+            b,
+            UserAction::Init,
+        )
         .unwrap();
 
     assert!(outcome.snapshot.composing.text.is_empty());
@@ -65,6 +71,7 @@ fn hot_path_select_commit() {
         core.scheduler
             .handle(
                 &mut core.sessions,
+                &mut core.handwriting,
                 id,
                 UserAction::KeyPress {
                     key_code: ch as u32,
@@ -77,6 +84,7 @@ fn hot_path_select_commit() {
         .scheduler
         .handle(
             &mut core.sessions,
+            &mut core.handwriting,
             id,
             UserAction::SelectCandidate { candidate_id: 0 },
         )

@@ -182,3 +182,52 @@ pub extern "C" fn yc_session_stop(editor_id: u64, reason: u32) {
         );
     }
 }
+
+/// Push one stroke (normalized points) for handwriting mode (M2.5).
+#[no_mangle]
+pub extern "C" fn yc_hw_push_stroke(
+    editor_id: u64,
+    points: *const yc_types::YcStrokePoint,
+    point_count: u32,
+    session_stroke_id: u64,
+    canvas_width: u32,
+    canvas_height: u32,
+    writing_mode: u32,
+) -> i32 {
+    ffi_guard(|| {
+        use yc_types::{Stroke, StrokePoint, WritingMode, YC_ERR_BUSY, YC_ERR_INTERNAL,
+                       YC_ERR_SESSION, YC_OK, MAX_HW_POINTS};
+
+        if points.is_null() || point_count == 0 || point_count as usize > MAX_HW_POINTS {
+            return YC_ERR_INTERNAL;
+        }
+        let wm = match WritingMode::from_raw(writing_mode) {
+            Some(m) => m,
+            None => return YC_ERR_INTERNAL,
+        };
+        let slice = unsafe { std::slice::from_raw_parts(points, point_count as usize) };
+        let stroke = Stroke {
+            points: slice
+                .iter()
+                .map(|p| StrokePoint {
+                    x: p.x,
+                    y: p.y,
+                    t: p.t,
+                    pressure: p.pressure,
+                })
+                .collect(),
+        };
+        with_core_mut(|state| {
+            let id = EditorId::from_raw(editor_id);
+            if !state.services.sessions.validate(id) {
+                return YC_ERR_SESSION;
+            }
+            match state.push_hw_stroke(id, stroke, canvas_width, canvas_height, wm, session_stroke_id)
+            {
+                YC_OK => YC_OK,
+                YC_ERR_SESSION => YC_ERR_SESSION,
+                _ => YC_ERR_BUSY,
+            }
+        })
+    })
+}
