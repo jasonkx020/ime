@@ -8,6 +8,7 @@ name = "yc-cli"
 path = "src/main.rs"
 
 [dependencies]
-yc-ffi = { path = "../yc-ffi" }
+yc-ffi = { path = "../yc-ffi", features = ["data"] }
 yc-types = { path = "../yc-types" }
 yc-handwriting = { path = "../yc-handwriting" }
+yc-theme = { path = "../yc-theme" }

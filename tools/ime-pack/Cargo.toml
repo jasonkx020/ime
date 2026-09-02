@@ -1,0 +1,14 @@
+[package]
+name = "ime-pack"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ime-pack"
+path = "src/main.rs"
+
+[dependencies]
+yc-pack = { path = "../../yc-core/crates/yc-pack" }
+yc-lexicon = { path = "../../yc-core/crates/yc-lexicon" }
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"

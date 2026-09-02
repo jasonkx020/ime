@@ -1735,6 +1735,10 @@ ime-ui-harmonyos/              # ArkUI KeyView / CandBar
 ime-ui-desktop/                # 共享桌面 UI 组件（可选：同一套 Qt/GTK 皮肤）
 ```
 
+> **yc-core 已实现（M0–M2.5）**：[`yc-core/`](../yc-core/) 含 `yc-ffi`…`yc-handwriting` 及 stub `yc-plugin`/`yc-data`/`yc-ai`/`yc-ext`/`yc-intel`；[`yc-cli`](../yc-core/crates/yc-cli/) 桌面 REPL 壳。
+>
+> **六端壳 M0 脚手架**：[`yc-shell-android/`](../yc-shell-android/)、[`yc-shell-ios/`](../yc-shell-ios/)、[`yc-shell-harmonyos/`](../yc-shell-harmonyos/)、[`yc-shell-windows/`](../yc-shell-windows/)、[`yc-shell-macos/`](../yc-shell-macos/)、[`yc-shell-linux/`](../yc-shell-linux/)；UI 占位 [`yc-ui-*`](../yc-ui-android/)。
+
 ### 9.1 模块依赖
 
 ```text
@@ -1769,7 +1773,11 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 | 阶段 | 交付 | 验收 |
 |------|------|------|
 | **M0** | Rust workspace + ime-ffi | cbindgen 头文件；**六端**链接通过；空实现 smoke test |
+
+> **yc-core 已实现（M0 脚手架）**：六端 `yc-shell-*` 目录 + FFI 胶水 + `scripts/build-all.ps1`；`yc_cold_submit` 冷路径 stub。
 | **M1** | 壳 + 热路径组词候选 + Session 隔离 | 拼音组词上屏 P95≤16ms；一框一会话；切换 wipe；validate 门禁 |
+
+> **yc M1 已实现**：六端 Arena 解析 + session/arena FFI；`yc-ui-*` Samsung 皮肤；Android `YcImeService` 端到端上屏；桌面 M1 smoke（`yc_platform_m1_smoke`）；详见 [`docs/M1_SMOKE.md`](../docs/M1_SMOKE.md)。
 | **M2** | 方案/布局切换 | 26 键/9 键/QWERTY 切换，中英切换，EditorInfo 强制 |
 
 > **yc-core 已实现（M2）**：`switch_layout` / `switch_scheme` / `toggle_ascii`、`EditorInfo` 强制、`UiCommand::ReloadKeyboard`、桌面 `yc-cli` REPL 壳。
@@ -1778,6 +1786,9 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 > **yc-core 已实现（M2.5）**：`yc-handwriting` 端侧模板识别、`HandwritingService`、`yc_hw_push_stroke`、手写 `UserAction` 路由、`yc-cli` `/handwriting` `/hw demo` 演示。
 | **M3** | 皮肤更换 + 手写连写云 | 皮肤 ≤100ms；连写模式 + 上云确认（Normal） |
 | **M3.5** | 语言包 OTA | PluginHost + 至少 1 个东南亚 LangPack（如 vi/th）；enable/disable；无需 App 更新 |
+
+> **yc-core 已实现（M3）**：`yc-theme` + `ThemeRuntime`；`yc-data` 冷路径后台队列 + `YcColdCallback`；`UiCommand::ApplyTheme` / `YC_CMD_APPLY_THEME`；连写低置信 → `ConfirmCloudHandwriting` / stub 云识别；验收见 [M3_SMOKE.md](M3_SMOKE.md)。
+> **yc-core 已实现（M3.5 + LangPack P0–P3 + 拼音词库）**：`LangPackSlot` + manifest 驱动 lexicon/strings/layout；`EngineFactory.register` + `DataDrivenEngine`（latin/rule_chain/table）；`yc-scheme` / `yc-layout` 编译 `scheme/*.bin`、`layouts/*.bin`；`switch_lang` 读 Slot；`ReloadKeyboard { layout_id }` 六端 LayoutLoader；fixture `vi-v1` / `th-v1` / `zh-pack-v1`。**中文拼音仅 zh-pack 路径**：`YCLX` v2 mmap 词库（10 万+ 由 `build-zh-lexicon.ps1` 生成），`pinyin_seg` 增量音节校验；已移除 `PinyinEngine` / 内置 demo 词库。
 | **M4** | AI 润色 + 隐私门禁 | 选区润色，三档 PrivacyLevel，密码框拒绝 |
 | **M4.5** | AI 场景助手 MVP | 谈判/恋爱/朋友圈 3 场景；3 条候选；显式上下文；上云预览；Session 隔离 |
 | **M5** | Catalog 多语言 + AiPack OTA + 手写多语言 | 语言包升级；AiPack；中日韩手写模型按需加载 |

@@ -1,0 +1,10 @@
+[package]
+name = "yc-plugin"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-types = { path = "../yc-types" }
+yc-pack = { path = "../yc-pack" }
+yc-layout = { path = "../yc-layout" }
+thiserror.workspace = true

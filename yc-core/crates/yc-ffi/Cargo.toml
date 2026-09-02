@@ -12,7 +12,23 @@ yc-types = { path = "../yc-types" }
 yc-session = { path = "../yc-session" }
 yc-engine = { path = "../yc-engine" }
 yc-lexicon = { path = "../yc-lexicon" }
+yc-handwriting = { path = "../yc-handwriting" }
+yc-plugin = { path = "../yc-plugin", optional = true }
+yc-data = { path = "../yc-data", optional = true }
+yc-intel = { path = "../yc-intel", optional = true }
+yc-ai = { path = "../yc-ai", optional = true }
+yc-ext = { path = "../yc-ext", optional = true }
 parking_lot.workspace = true
+
+[features]
+default = []
+intel = ["dep:yc-intel"]
+ai = ["dep:yc-ai"]
+handwriting = []
+ext = ["dep:yc-ext"]
+lang-pack-ota = ["dep:yc-plugin"]
+data = ["dep:yc-data", "yc-data/plugin"]
+full = ["intel", "ai", "handwriting", "ext", "lang-pack-ota", "data"]
 
 [dev-dependencies]
 yc-handwriting = { path = "../yc-handwriting" }

@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(yc_jni)
+
+set(YC_HOT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/include)
+set(YC_JNI_LIBS_ABI_DIR ${YC_JNI_LIBS_DIR}/${ANDROID_ABI})
+set(YC_FFI_PREBUILT ${YC_JNI_LIBS_ABI_DIR}/libyc_ffi.so)
+
+add_library(yc_jni SHARED yc_jni.cpp)
+target_include_directories(yc_jni PRIVATE ${YC_HOT_INCLUDE_DIR})
+target_link_libraries(yc_jni log)
+
+if (EXISTS ${YC_FFI_PREBUILT})
+    message(STATUS "Linking prebuilt libyc_ffi.so for ${ANDROID_ABI}")
+    add_library(yc_ffi SHARED IMPORTED)
+    set_target_properties(yc_ffi PROPERTIES IMPORTED_LOCATION ${YC_FFI_PREBUILT})
+    target_link_libraries(yc_jni yc_ffi)
+else ()
+    message(WARNING "libyc_ffi.so not found for ${ANDROID_ABI}; using stub FFI symbols")
+    target_compile_definitions(yc_jni PRIVATE YC_FFI_STUB=1)
+endif ()

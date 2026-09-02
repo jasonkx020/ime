@@ -1,0 +1,6 @@
+layout_id: layout_pinyin26
+name: 拼音26
+rows:
+  - - { label: "Q", output: "q", width: 1.0 }
+    - { label: "W", output: "w", width: 1.0 }
+    - { label: "E", output: "e", width: 1.0 }

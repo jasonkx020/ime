@@ -1,0 +1,8 @@
+scheme_id: vi_latin
+lang: vi
+alphabet: "abcdefghijklmnopqrstuvwxyz"
+transform:
+  type: latin_predict
+
+candidate:
+  sources: [lexicon, user, hot]

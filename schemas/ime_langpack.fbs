@@ -1,0 +1,27 @@
+namespace ime.langpack;
+
+enum EngineKind : byte { DataDriven = 0, NativeSo = 1 }
+
+table InputSchemeDesc {
+  id:string;
+  name:string;
+  default_layout_id:string;
+}
+
+table LexiconRef {
+  path:string;
+  format:string;
+}
+
+table LangPackManifest {
+  id:string;
+  version:uint32;
+  min_host_version:string;
+  lang:string;
+  display_name:string;
+  schemes:[InputSchemeDesc];
+  lexicon:LexiconRef;
+  engine:EngineKind = DataDriven;
+}
+
+root_type LangPackManifest;

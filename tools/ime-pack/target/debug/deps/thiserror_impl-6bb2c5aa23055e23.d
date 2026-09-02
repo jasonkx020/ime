@@ -1,0 +1,17 @@
+C:\Users\Administrator\Projects\ime-design\tools\ime-pack\target\debug\deps\thiserror_impl-6bb2c5aa23055e23.d: D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\lib.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\ast.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\attr.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\expand.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fallback.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fmt.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\generics.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\prop.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\scan_expr.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\unraw.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\valid.rs
+
+C:\Users\Administrator\Projects\ime-design\tools\ime-pack\target\debug\deps\thiserror_impl-6bb2c5aa23055e23.dll: D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\lib.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\ast.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\attr.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\expand.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fallback.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fmt.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\generics.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\prop.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\scan_expr.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\unraw.rs D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\valid.rs
+
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\lib.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\ast.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\attr.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\expand.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fallback.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\fmt.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\generics.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\prop.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\scan_expr.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\unraw.rs:
+D:\Rust\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-impl-2.0.20\src\valid.rs:
+
+# env-dep:CARGO_PKG_VERSION_PATCH=20

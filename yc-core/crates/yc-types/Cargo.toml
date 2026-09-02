@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 thiserror.workspace = true
 zeroize.workspace = true
+serde = { version = "1", features = ["derive"] }

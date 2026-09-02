@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-yc-types = { path = "../yc-types" }
 yc-lexicon = { path = "../yc-lexicon" }
+yc-types = { path = "../yc-types" }
+yc-scheme = { path = "../yc-scheme" }
 thiserror.workspace = true
 
 [dev-dependencies]
+yc-pack = { path = "../yc-pack" }

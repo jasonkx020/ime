@@ -1,9 +1,16 @@
+mod common;
+
 use yc_session::CoreServices;
 use yc_types::{EditorFingerprint, UserAction};
 
 #[test]
 fn session_isolation_composing() {
     let mut core = CoreServices::new();
+    if !common::zh_pack_root().exists() {
+        return;
+    }
+    common::setup_zh_pack(&mut core.scheduler);
+
     let fp_a = EditorFingerprint {
         package_name: "app".into(),
         field_id: 1,
@@ -23,19 +30,20 @@ fn session_isolation_composing() {
     let b = core.sessions.create(fp_b);
     core.sessions.activate(a);
     core.scheduler.on_session_created(a);
+    common::activate_pinyin26(
+        &mut core.scheduler,
+        &mut core.sessions,
+        &mut core.handwriting,
+        a,
+    );
 
-    for ch in "nihao".chars() {
-        core.scheduler
-            .handle(
-                &mut core.sessions,
-                &mut core.handwriting,
-                a,
-                UserAction::KeyPress {
-                    key_code: ch as u32,
-                },
-            )
-            .unwrap();
-    }
+    common::type_keys(
+        &mut core.scheduler,
+        &mut core.sessions,
+        &mut core.handwriting,
+        a,
+        "nihao",
+    );
 
     core.sessions.activate(b);
     core.scheduler.on_session_created(b);
@@ -56,6 +64,11 @@ fn session_isolation_composing() {
 #[test]
 fn hot_path_select_commit() {
     let mut core = CoreServices::new();
+    if !common::zh_pack_root().exists() {
+        return;
+    }
+    common::setup_zh_pack(&mut core.scheduler);
+
     let fp = EditorFingerprint {
         package_name: "app".into(),
         field_id: 1,
@@ -66,19 +79,20 @@ fn hot_path_select_commit() {
     let id = core.sessions.create(fp);
     core.sessions.activate(id);
     core.scheduler.on_session_created(id);
+    common::activate_pinyin26(
+        &mut core.scheduler,
+        &mut core.sessions,
+        &mut core.handwriting,
+        id,
+    );
 
-    for ch in "nihao".chars() {
-        core.scheduler
-            .handle(
-                &mut core.sessions,
-                &mut core.handwriting,
-                id,
-                UserAction::KeyPress {
-                    key_code: ch as u32,
-                },
-            )
-            .unwrap();
-    }
+    common::type_keys(
+        &mut core.scheduler,
+        &mut core.sessions,
+        &mut core.handwriting,
+        id,
+        "nihao",
+    );
 
     let outcome = core
         .scheduler

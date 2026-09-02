@@ -14,3 +14,5 @@ zeroize.workspace = true
 
 [dev-dependencies]
 yc-handwriting = { path = "../yc-handwriting" }
+yc-pack = { path = "../yc-pack" }
+yc-plugin = { path = "../yc-plugin" }

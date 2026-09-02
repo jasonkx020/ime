@@ -325,43 +325,42 @@ word	freq	romanized
 - 大型词库：Python/pandas 脚本清洗后输出 TSV
 - **禁止**直接编辑 `.dat` / `.fst` 二进制
 
-### 8.3 编译：`ime-lexicon compile`
+### 8.3 编译：`ime-pack compile-lexicon`
 
 ```bash
-ime-lexicon compile \
-  --input lexicon/vi_words.tsv \
-  --key-column romanized \
-  --format dat \
-  --output build/lexicon/vi.dat
+ime-pack compile-lexicon lexicon/vi_words.tsv -o build/lexicon/vi.dat
 ```
 
-### 8.4 产物格式
+语言包构建时 `ime-pack build` 也会自动从 TSV 编译 v2 `.dat`（vi/th/zh 统一）。
 
-#### `*.dat`（默认，推荐）
+中文大词库：运行 `scripts/build-zh-lexicon.ps1` 从 `zh_words.sample.tsv` 扩展至 10 万+ 行（完整 TSV gitignore，sample 供离线测试）。
 
-自定义只读词典，针对 IME 查询优化：
+### 8.4 产物格式 `YCLX` v2（唯一版本）
+
+`yc-lexicon` 输出的只读词典，**运行时仅 mmap**（`memmap2`），热路径前缀查词 O(log n)：
 
 ```text
-Header (64B)
-  magic: "IMELEX\0"
-  version: u32
-  entry_count: u64
-  key_index_offset: u64    # 有序 key 索引（romanized / 拼音音节序列）
-  payload_offset: u64      # word + freq 紧凑区
-  flags: u32                 # case_insensitive 等
+Header (16B)
+  magic: "YCLX"
+  version: u32 = 2
+  key_count: u32
+  payload_offset: u32
 
-KeyIndex[]
-  key_hash: u64
-  key_bytes_offset / len
-  payload_offset / len
+Index[]  (按 romanized key 字典序)
+  key_len: u16
+  key_bytes: [u8]
+  payload_offset: u32
+  payload_count: u32
 
-Payload
+Payload[]
   freq: u32
+  word_len: u16
   word_utf8: [u8]
 ```
 
-- 构建时排序、去重、规范化
-- 运行时 `Lexicon.open_lang` → `memmap2`，热路径二分/哈希查索引
+- TSV 编译时：`pinyin`/`romanized` 列去分隔符、小写；同 `(key, word)` 保留最高 freq
+- 查询：`key.starts_with(user_prefix)` → index 前缀范围 → 按 freq 降序，截断 9 条
+- **中文拼音必须**通过 `zh-pack-v1` 等 LangPack 交付词库；宿主无内置 demo 词库
 
 #### `*.fst`（可选，大词库 / 形态复杂）
 

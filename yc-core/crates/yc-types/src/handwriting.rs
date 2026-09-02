@@ -49,4 +49,5 @@ pub struct HandwritingResult {
     pub recognized_text: Option<String>,
     pub confidence: f32,
     pub used_cloud: bool,
+    pub needs_cloud_confirm: bool,
 }

@@ -1,0 +1,24 @@
+id = "vi-v1"
+version = 1
+min_host_version = "0.1.0"
+lang = "vi"
+display_name = "Tiếng Việt"
+
+[[schemes]]
+id = "latin"
+name = "Latin predict"
+default_layout_id = "layout_qwerty"
+file = "schemes/vi_latin.yaml"
+
+[[schemes]]
+id = "telex"
+name = "Telex"
+default_layout_id = "layout_qwerty"
+file = "schemes/vi_telex.yaml"
+
+[lexicon]
+file = "lexicon/vi_words.tsv"
+format = "dat"
+
+[build]
+strings = "strings/vi.json"

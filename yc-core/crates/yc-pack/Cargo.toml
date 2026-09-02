@@ -1,0 +1,19 @@
+[package]
+name = "yc-pack"
+version.workspace = true
+edition.workspace = true
+description = "LangPack / SkinPack build and parse (M3/M3.5)"
+
+[dependencies]
+yc-lexicon = { path = "../yc-lexicon" }
+yc-scheme = { path = "../yc-scheme" }
+yc-layout = { path = "../yc-layout" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"

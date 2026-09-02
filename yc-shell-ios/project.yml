@@ -1,0 +1,21 @@
+name: YcInput
+options:
+  bundleIdPrefix: com.yc.input
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  YcApp:
+    type: application
+    platform: iOS
+    sources:
+      - YcApp
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.yc.input
+  YcKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - YcKeyboard
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.yc.input.keyboard
+      SWIFT_OBJC_BRIDGING_HEADER: YcKeyboard/YcKeyboard-Bridging-Header.h

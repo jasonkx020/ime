@@ -1,0 +1,18 @@
+namespace ime.catalog;
+
+table CatalogEntry {
+  pack_id:string;
+  lang:string;
+  version:uint32;
+  local_path:string;
+  sha256:string;
+  size_bytes:uint64;
+  min_host_version:string;
+}
+
+table LangCatalog {
+  entries:[CatalogEntry];
+  catalog_version:uint32;
+}
+
+root_type LangCatalog;

@@ -1,0 +1,9 @@
+scheme_id: pinyin_full
+lang: zh
+transform:
+  type: table
+  rules: rules/pinyin_syllables.yaml
+
+candidate:
+  sources: [lexicon, user, hot]
+  pinyin_mode: full

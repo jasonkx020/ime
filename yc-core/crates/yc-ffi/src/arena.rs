@@ -1,7 +1,10 @@
 //! Hot-path arena (double-buffered snapshot for FFI readers).
 
 use yc_types::{
-    YcCandidateSlot, YcHotHeader, MAX_CAND_TEXT_LEN, MAX_CANDIDATES, MAX_COMPOSING_LEN,
+    YcCandidateSlot, YcHotHeader, YcUiCommandSlot, YC_CMD_APPLY_THEME, YC_CMD_COMMIT,
+    YC_CMD_DELETE_SURROUNDING, YC_CMD_FINISH_COMPOSING, YC_CMD_RELOAD_KEYBOARD,
+    YC_CMD_SET_COMPOSING, MAX_ARENA_COMMANDS, MAX_CAND_TEXT_LEN, MAX_CANDIDATES,
+    MAX_COMPOSING_LEN,
 };
 use yc_types::{ImmSnapshot, UiCommand};
 
@@ -84,6 +87,60 @@ impl HotArena {
                 std::slice::from_raw_parts(
                     &slot as *const YcCandidateSlot as *const u8,
                     std::mem::size_of::<YcCandidateSlot>(),
+                )
+            };
+            if off + slot_bytes.len() <= ARENA_SIZE {
+                buf[off..off + slot_bytes.len()].copy_from_slice(slot_bytes);
+            }
+        }
+
+        let cmds_off = slots_off + MAX_CANDIDATES * std::mem::size_of::<YcCandidateSlot>();
+        for (i, cmd) in commands.iter().take(MAX_ARENA_COMMANDS).enumerate() {
+            let mut slot = YcUiCommandSlot::default();
+            match cmd {
+                UiCommand::Commit { text } => {
+                    slot.cmd_type = YC_CMD_COMMIT;
+                    let bytes = text.as_bytes();
+                    let len = bytes.len().min(MAX_CAND_TEXT_LEN);
+                    slot.text_len = len as u32;
+                    slot.text[..len].copy_from_slice(&bytes[..len]);
+                }
+                UiCommand::SetComposing { text } => {
+                    slot.cmd_type = YC_CMD_SET_COMPOSING;
+                    let bytes = text.as_bytes();
+                    let len = bytes.len().min(MAX_CAND_TEXT_LEN);
+                    slot.text_len = len as u32;
+                    slot.text[..len].copy_from_slice(&bytes[..len]);
+                }
+                UiCommand::FinishComposing => {
+                    slot.cmd_type = YC_CMD_FINISH_COMPOSING;
+                }
+                UiCommand::DeleteSurrounding { before, after } => {
+                    slot.cmd_type = YC_CMD_DELETE_SURROUNDING;
+                    slot.param0 = *before;
+                    slot.param1 = *after;
+                }
+                UiCommand::ReloadKeyboard { layout, layout_id } => {
+                    slot.cmd_type = YC_CMD_RELOAD_KEYBOARD;
+                    slot.param0 = layout.raw();
+                    let bytes = layout_id.as_bytes();
+                    let len = bytes.len().min(MAX_CAND_TEXT_LEN);
+                    slot.text_len = len as u32;
+                    slot.text[..len].copy_from_slice(&bytes[..len]);
+                }
+                UiCommand::ApplyTheme { skin_id } => {
+                    slot.cmd_type = YC_CMD_APPLY_THEME;
+                    let bytes = skin_id.as_bytes();
+                    let len = bytes.len().min(MAX_CAND_TEXT_LEN);
+                    slot.text_len = len as u32;
+                    slot.text[..len].copy_from_slice(&bytes[..len]);
+                }
+            }
+            let off = cmds_off + i * std::mem::size_of::<YcUiCommandSlot>();
+            let slot_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    &slot as *const YcUiCommandSlot as *const u8,
+                    std::mem::size_of::<YcUiCommandSlot>(),
                 )
             };
             if off + slot_bytes.len() <= ARENA_SIZE {

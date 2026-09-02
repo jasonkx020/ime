@@ -1,0 +1,6 @@
+- match: "aw"
+  output: "ă"
+- match: "aa"
+  output: "â"
+- match: "dd"
+  output: "đ"

@@ -1,0 +1,19 @@
+id = "zh-pack-v1"
+version = 3
+min_host_version = "0.1.0"
+lang = "zh"
+display_name = "中文拼音"
+
+[[schemes]]
+id = "pinyin_full"
+name = "全拼"
+default_layout_id = "layout_pinyin26"
+file = "schemes/pinyin_full.yaml"
+
+[lexicon]
+file = "lexicon/zh_words.tsv"
+format = "dat"
+key_column = "pinyin"
+
+[build]
+strings = "strings/zh.json"

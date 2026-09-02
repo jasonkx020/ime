@@ -43,7 +43,11 @@ pub enum UiCommand {
     SetComposing { text: String },
     FinishComposing,
     DeleteSurrounding { before: u32, after: u32 },
-    ReloadKeyboard { layout: crate::mode::KeyboardLayout },
+    ReloadKeyboard {
+        layout: crate::mode::KeyboardLayout,
+        layout_id: String,
+    },
+    ApplyTheme { skin_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]

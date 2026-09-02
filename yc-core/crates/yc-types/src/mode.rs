@@ -57,6 +57,11 @@ pub struct InputMode {
     pub layout: KeyboardLayout,
     pub scheme: InputScheme,
     pub lang: Language,
+    /// BCP-47 tag from LangPack manifest (e.g. `vi`, `th`).
+    pub lang_tag: String,
+    pub active_pack_id: String,
+    pub scheme_id: String,
+    pub layout_id: String,
     pub ascii_mode: bool,
     pub forced_by_editor: bool,
 }
@@ -67,6 +72,10 @@ impl Default for InputMode {
             layout: KeyboardLayout::Pinyin26,
             scheme: InputScheme::PinyinFull,
             lang: Language::Zh,
+            lang_tag: "zh".into(),
+            active_pack_id: String::new(),
+            scheme_id: "pinyin".into(),
+            layout_id: "layout_pinyin26".into(),
             ascii_mode: false,
             forced_by_editor: false,
         }

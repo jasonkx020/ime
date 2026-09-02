@@ -1,0 +1,9 @@
+layout_id: layout_qwerty
+name: QWERTY
+rows:
+  - - { label: "Q", output: "q", width: 1.0 }
+    - { label: "W", output: "w", width: 1.0 }
+    - { label: "E", output: "e", width: 1.0 }
+  - - { label: "A", output: "a", width: 1.0 }
+    - { label: "S", output: "s", width: 1.0 }
+    - { label: "D", output: "d", width: 1.0 }

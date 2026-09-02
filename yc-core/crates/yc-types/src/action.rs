@@ -15,6 +15,9 @@ pub enum HotActionType {
     RecognizeHandwriting = 9,
     ClearHandwriting = 10,
     UndoHandwriting = 11,
+    ConfirmCloudHandwriting = 12,
+    DismissCloudHandwriting = 13,
+    SwitchLang = 14,
 }
 
 impl HotActionType {
@@ -32,6 +35,9 @@ impl HotActionType {
             9 => Some(Self::RecognizeHandwriting),
             10 => Some(Self::ClearHandwriting),
             11 => Some(Self::UndoHandwriting),
+            12 => Some(Self::ConfirmCloudHandwriting),
+            13 => Some(Self::DismissCloudHandwriting),
+            14 => Some(Self::SwitchLang),
             _ => None,
         }
     }
@@ -52,6 +58,9 @@ pub enum UserAction {
     RecognizeHandwriting,
     ClearHandwriting,
     UndoHandwriting,
+    ConfirmCloudHandwriting,
+    DismissCloudHandwriting,
+    SwitchLang { pack_id_hash: u32 },
 }
 
 impl UserAction {
@@ -77,6 +86,11 @@ impl UserAction {
             HotActionType::RecognizeHandwriting => Some(UserAction::RecognizeHandwriting),
             HotActionType::ClearHandwriting => Some(UserAction::ClearHandwriting),
             HotActionType::UndoHandwriting => Some(UserAction::UndoHandwriting),
+            HotActionType::ConfirmCloudHandwriting => Some(UserAction::ConfirmCloudHandwriting),
+            HotActionType::DismissCloudHandwriting => Some(UserAction::DismissCloudHandwriting),
+            HotActionType::SwitchLang => Some(UserAction::SwitchLang {
+                pack_id_hash: key_code,
+            }),
         }
     }
 }

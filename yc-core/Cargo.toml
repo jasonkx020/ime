@@ -3,9 +3,18 @@ resolver = "2"
 members = [
     "crates/yc-types",
     "crates/yc-lexicon",
+    "crates/yc-pack",
+    "crates/yc-theme",
+    "crates/yc-scheme",
+    "crates/yc-layout",
     "crates/yc-engine",
     "crates/yc-handwriting",
     "crates/yc-session",
+    "crates/yc-plugin",
+    "crates/yc-data",
+    "crates/yc-intel",
+    "crates/yc-ai",
+    "crates/yc-ext",
     "crates/yc-ffi",
     "crates/yc-cli",
 ]

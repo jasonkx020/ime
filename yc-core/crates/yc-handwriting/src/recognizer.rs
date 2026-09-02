@@ -13,6 +13,15 @@ impl OnDeviceRecognizer {
     }
 
     pub fn infer(&self, batch: &StrokeBatch) -> HandwritingResult {
+        if batch.strokes.is_empty() || batch.strokes.iter().all(|s| s.points.is_empty()) {
+            return HandwritingResult {
+                candidates: Vec::new(),
+                recognized_text: None,
+                confidence: 0.0,
+                used_cloud: false,
+                needs_cloud_confirm: batch.writing_mode == WritingMode::Continuous,
+            };
+        }
         let mut scored: Vec<(f32, GlyphTemplate)> = templates::templates()
             .into_iter()
             .map(|tpl| (Self::match_score(batch, &tpl), tpl))
@@ -43,6 +52,8 @@ impl OnDeviceRecognizer {
             recognized_text,
             confidence: top_confidence,
             used_cloud: false,
+            needs_cloud_confirm: batch.writing_mode == WritingMode::Continuous
+                && top_confidence < 0.6,
         }
     }
 

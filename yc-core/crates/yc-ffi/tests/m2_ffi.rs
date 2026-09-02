@@ -54,8 +54,8 @@ fn ffi_password_session() {
     let action = YcHotAction {
         editor_id,
         client_seq: 0,
-        action_type: HotActionType::KeyPress as u32,
-        key_code: b'a' as u32,
+        action_type: HotActionType::Init as u32,
+        key_code: 0,
         candidate_id: 0,
         flags: 0,
         reserved: [0; 8],

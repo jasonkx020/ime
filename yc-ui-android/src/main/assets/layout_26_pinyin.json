@@ -1,0 +1,9 @@
+{
+  "layout_id": "layout_26_pinyin",
+  "rows": [
+    ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+    ["a", "s", "d", "f", "g", "h", "j", "k", "l", "backspace"],
+    ["z", "x", "c", "v", "b", "n", "m"],
+    ["symbol", "globe", ",", "space", ".", "search"]
+  ]
+}

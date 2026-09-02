@@ -5,4 +5,5 @@ edition.workspace = true
 
 [dependencies]
 yc-types = { path = "../yc-types" }
+memmap2 = "0.9"
 thiserror.workspace = true

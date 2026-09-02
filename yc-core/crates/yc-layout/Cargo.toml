@@ -1,0 +1,11 @@
+[package]
+name = "yc-layout"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror.workspace = true
+
+[dev-dependencies]

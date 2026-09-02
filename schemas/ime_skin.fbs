@@ -1,0 +1,31 @@
+namespace ime.skin;
+
+table Color {
+  r:ubyte;
+  g:ubyte;
+  b:ubyte;
+  a:ubyte = 255;
+}
+
+table ColorPalette {
+  keyboard_bg:Color;
+  key_normal:Color;
+  key_utility:Color;
+  key_accent:Color;
+  key_pressed:Color;
+  cand_text:Color;
+  composing_text:Color;
+  toolbar_text:Color;
+}
+
+table SkinPack {
+  id:string;
+  version:uint32;
+  name:string;
+  colors:ColorPalette;
+  key_radius:float32;
+  key_font_size:float32;
+  cand_font_size:float32;
+}
+
+root_type SkinPack;

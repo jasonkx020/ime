@@ -104,3 +104,35 @@ impl Default for YcCandidateSlot {
         }
     }
 }
+
+/// UiCommand types written after candidate slots in the hot arena (M1).
+pub const YC_CMD_COMMIT: u32 = 0;
+pub const YC_CMD_SET_COMPOSING: u32 = 1;
+pub const YC_CMD_FINISH_COMPOSING: u32 = 2;
+pub const YC_CMD_DELETE_SURROUNDING: u32 = 3;
+pub const YC_CMD_RELOAD_KEYBOARD: u32 = 4;
+pub const YC_CMD_APPLY_THEME: u32 = 5;
+
+pub const MAX_ARENA_COMMANDS: usize = 4;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct YcUiCommandSlot {
+    pub cmd_type: u32,
+    pub param0: u32,
+    pub param1: u32,
+    pub text_len: u32,
+    pub text: [u8; MAX_CAND_TEXT_LEN],
+}
+
+impl Default for YcUiCommandSlot {
+    fn default() -> Self {
+        Self {
+            cmd_type: 0,
+            param0: 0,
+            param1: 0,
+            text_len: 0,
+            text: [0; MAX_CAND_TEXT_LEN],
+        }
+    }
+}

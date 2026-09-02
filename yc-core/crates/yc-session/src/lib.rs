@@ -1,8 +1,10 @@
 //! Session lifecycle and hot-path scheduling.
 
+mod langpack;
 mod manager;
 mod scheduler;
 
+pub use langpack::{hash_pack_id, EnabledLangPack};
 pub use manager::SessionManager;
 pub use scheduler::Scheduler;
 

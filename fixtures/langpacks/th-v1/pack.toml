@@ -1,0 +1,17 @@
+id = "th-v1"
+version = 1
+min_host_version = "0.1.0"
+lang = "th"
+display_name = "ภาษาไทย"
+
+[[schemes]]
+id = "latin"
+name = "Latin predict"
+default_layout_id = "layout_qwerty"
+
+[lexicon]
+file = "lexicon/th_words.tsv"
+format = "dat"
+
+[build]
+strings = "strings/th.json"

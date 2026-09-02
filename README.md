@@ -27,6 +27,7 @@
 | [docs/RUST_PLATFORM_INTEGRATION.md](docs/RUST_PLATFORM_INTEGRATION.md) | **Rust 六端对接**：C ABI、移动三端（JNI / xcframework / NAPI）+ 桌面三端（TSF / IMK / IBus·Fcitx5） |
 
 | [docs/SOURCE_NAMING_CONVENTIONS.md](docs/SOURCE_NAMING_CONVENTIONS.md) | **源代码命名规范**：`yc` 前缀、六端命名、FFI、迁移对照 |
+| [docs/M1_SMOKE.md](docs/M1_SMOKE.md) | **M1 六端 smoke**：热路径拼音上屏 + Samsung 皮肤验收 |
 
 
 
@@ -132,7 +133,24 @@ cd yc-core
 
 产物：`libyc_ffi`（`.dll` / `.so` / `.dylib`）、[`include/yc_hot.h`](yc-core/include/yc_hot.h)。
 
-当前实现范围（M0–M2.5）：`yc-types`、`yc-session`、`yc-engine`（最小拼音 + ASCII/数字直出）、`yc-handwriting`（端侧模板识别）、`yc-lexicon`（内存词表）、`yc-ffi`（热路径 C ABI + Arena）、`yc-cli`（桌面 REPL Demo 壳）。
+当前实现范围（M0–M2.5 + **M1 六端热路径/皮肤脚手架**）：`yc-core` workspace、六端 `yc-shell-*`（M1 热路径 + Samsung UI）、`yc-ui-*`、`yc-cli` 桌面 REPL。
+
+### Monorepo 结构
+
+```text
+ime-design/
+  yc-core/              # Rust workspace（yc-ffi 唯一 C ABI 边界）
+  yc-shell-android/     # InputMethodService + JNI
+  yc-shell-ios/         # Keyboard Extension + Swift
+  yc-shell-harmonyos/   # InputMethodExtensionAbility + NAPI
+  yc-shell-windows/     # TSF TIP + C++
+  yc-shell-macos/       # IMK Server + Swift
+  yc-shell-linux/       # IBus + Fcitx5
+  yc-ui-*/              # KeyView / CandBar 接口占位
+  scripts/build-all.ps1 # 构建 yc-ffi + 同步头文件
+```
+
+各端 smoke 验收见 [`docs/M0_SMOKE.md`](docs/M0_SMOKE.md)。
 
 
 
@@ -148,11 +166,9 @@ cd yc-core
 
 
 
-本仓库包含**设计文档**与 **`yc-core/` Rust 核心实现（M0/M1）**，不含：
+本仓库包含**设计文档**、**`yc-core/` Rust 核心**、**六端 `yc-shell-*` M1 热路径脚手架**与 **Samsung UI 模块**，不含：
 
-
-
-- 六端 `yc-shell-*` 工程脚手架
+- TSF/IMK 完整系统注册与 M5.5 桌面 MVP 深化
 
 - 词库/模型训练与后端 API
 

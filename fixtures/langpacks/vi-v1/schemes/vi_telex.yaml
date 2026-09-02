@@ -1,0 +1,8 @@
+scheme_id: vi_telex
+lang: vi
+transform:
+  type: rule_chain
+  rules: rules/telex.yaml
+
+candidate:
+  sources: [lexicon, user, hot]

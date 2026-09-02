@@ -1,8 +1,9 @@
 mod arena;
 mod arena_read;
+mod cold;
 mod core;
 
-pub use arena_read::{parse_arena, ArenaCandidate, ArenaSnapshot};
+pub use arena_read::{parse_arena, ArenaCandidate, ArenaCommand, ArenaSnapshot};
 
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -229,5 +230,105 @@ pub extern "C" fn yc_hw_push_stroke(
                 _ => YC_ERR_BUSY,
             }
         })
+    })
+}
+
+/// Cold-path submit (M3/M3.5; requires `data` feature).
+#[no_mangle]
+pub extern "C" fn yc_cold_submit(
+    editor_id: u64,
+    kind: u32,
+    payload: *const u8,
+    payload_len: usize,
+) -> i32 {
+    ffi_guard(|| {
+        if payload.is_null() && payload_len > 0 {
+            return YC_ERR_INTERNAL;
+        }
+        let slice = if payload_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(payload, payload_len) }
+        };
+        #[cfg(feature = "data")]
+        {
+            with_core_mut(|state| crate::cold::cold_submit(&state.cold, editor_id, kind, slice))
+        }
+        #[cfg(not(feature = "data"))]
+        {
+            crate::cold::cold_submit(editor_id, kind, slice)
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn yc_cold_cancel(task_id: u32) -> i32 {
+    ffi_guard(|| {
+        #[cfg(feature = "data")]
+        {
+            with_core_mut(|state| crate::cold::cold_cancel(&state.cold, task_id))
+        }
+        #[cfg(not(feature = "data"))]
+        {
+            crate::cold::cold_cancel(task_id)
+        }
+    })
+}
+
+/// Register shell callback for cold-path completion (M3).
+#[no_mangle]
+pub extern "C" fn yc_cold_set_callback(
+    callback: Option<
+        extern "C" fn(
+            task_id: i32,
+            editor_id: u64,
+            payload: *const u8,
+            payload_len: usize,
+            err: i32,
+        ),
+    >,
+) -> i32 {
+    ffi_guard(|| {
+        #[cfg(feature = "data")]
+        {
+            with_core_mut(|state| {
+                if let Some(cb) = callback {
+                    state.cold.set_callback(Box::new(
+                        move |task_id, editor_id, payload, err| {
+                            cb(
+                                task_id.0 as i32,
+                                editor_id.raw(),
+                                payload.as_ptr(),
+                                payload.len(),
+                                err,
+                            );
+                        },
+                    ));
+                } else {
+                    state.cold.set_callback(Box::new(|_, _, _, _| {}));
+                }
+                YC_OK
+            })
+        }
+        #[cfg(not(feature = "data"))]
+        {
+            let _ = callback;
+            YC_ERR_INTERNAL
+        }
+    })
+}
+
+/// Sync enabled lang packs from PluginHost into Scheduler (call after cold enable).
+#[no_mangle]
+pub extern "C" fn yc_core_sync_lang_packs() -> i32 {
+    ffi_guard(|| {
+        #[cfg(feature = "data")]
+        {
+            with_core_mut(|state| state.sync_lang_packs())
+        }
+        #[cfg(not(feature = "data"))]
+        {
+            YC_ERR_INTERNAL
+        }
     })
 }
