@@ -1,0 +1,12 @@
+[package]
+name = "yc-session"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-types = { path = "../yc-types" }
+yc-engine = { path = "../yc-engine" }
+yc-lexicon = { path = "../yc-lexicon" }
+parking_lot.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true

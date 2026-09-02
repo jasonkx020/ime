@@ -1,0 +1,12 @@
+[package]
+name = "yc-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "yc-cli"
+path = "src/main.rs"
+
+[dependencies]
+yc-ffi = { path = "../yc-ffi" }
+yc-types = { path = "../yc-types" }

@@ -1,0 +1,17 @@
+[package]
+name = "yc-ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "yc_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+yc-types = { path = "../yc-types" }
+yc-session = { path = "../yc-session" }
+yc-engine = { path = "../yc-engine" }
+yc-lexicon = { path = "../yc-lexicon" }
+parking_lot.workspace = true
+
+[dev-dependencies]

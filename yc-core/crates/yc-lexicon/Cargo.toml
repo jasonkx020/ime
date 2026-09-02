@@ -1,0 +1,8 @@
+[package]
+name = "yc-lexicon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-types = { path = "../yc-types" }
+thiserror.workspace = true

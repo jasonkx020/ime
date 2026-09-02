@@ -1704,6 +1704,8 @@ lang_catalog_cache (fetched_at, blob)   -- 可选：Catalog 本地缓存
 
 ## 9. 仓库模块边界
 
+> 仓库与 crate **命名以 [SOURCE_NAMING_CONVENTIONS.md](SOURCE_NAMING_CONVENTIONS.md) 为准**；下文 `ime-*` 为遗留示例名。**Rust 实现见仓库根目录 [`yc-core/`](../yc-core/)**。
+
 ```text
 ime-design/                    # 本设计文档仓库
 
@@ -1769,6 +1771,8 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 | **M0** | Rust workspace + ime-ffi | cbindgen 头文件；**六端**链接通过；空实现 smoke test |
 | **M1** | 壳 + 热路径组词候选 + Session 隔离 | 拼音组词上屏 P95≤16ms；一框一会话；切换 wipe；validate 门禁 |
 | **M2** | 方案/布局切换 | 26 键/9 键/QWERTY 切换，中英切换，EditorInfo 强制 |
+
+> **yc-core 已实现（M2）**：`switch_layout` / `switch_scheme` / `toggle_ascii`、`EditorInfo` 强制、`UiCommand::ReloadKeyboard`、桌面 `yc-cli` REPL 壳。
 | **M2.5** | 手写板 MVP | HandwritingPad、单字模式、端侧识别、CandBar 选词上屏 |
 | **M3** | 皮肤更换 + 手写连写云 | 皮肤 ≤100ms；连写模式 + 上云确认（Normal） |
 | **M3.5** | 语言包 OTA | PluginHost + 至少 1 个东南亚 LangPack（如 vi/th）；enable/disable；无需 App 更新 |
