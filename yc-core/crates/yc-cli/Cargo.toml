@@ -12,3 +12,4 @@ yc-ffi = { path = "../yc-ffi", features = ["data"] }
 yc-types = { path = "../yc-types" }
 yc-handwriting = { path = "../yc-handwriting" }
 yc-theme = { path = "../yc-theme" }
+yc-ai = { path = "../yc-ai" }

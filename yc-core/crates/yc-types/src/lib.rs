@@ -2,6 +2,7 @@
 
 mod langpack;
 mod action;
+mod ai;
 mod cold;
 mod editor_info;
 mod error;
@@ -12,6 +13,7 @@ mod session;
 mod snapshot;
 
 pub use langpack::LangPackEngineSpec;
+pub use ai::{AiMode, AiOutput, AiVariant, RedactedField, RedactedPreview, TaskReq};
 pub use cold::{ColdKind, LangPackInfo, LangPackState};
 pub use action::{HotActionType, UserAction};
 pub use handwriting::{

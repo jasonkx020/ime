@@ -1,10 +1,12 @@
 //! LangPack OTA plugin host (M3.5).
 
+mod catalog;
 mod host;
 mod layout_runtime;
 mod registry;
 mod slot;
 
+pub use catalog::{CatalogEntry, RemoteCatalog};
 pub use host::PluginHost;
 pub use layout_runtime::{layout_bin_path, LayoutRuntime};
 pub use registry::{hash_pack_id, LangPackLoader, LangPackRegistry, validate_slot};

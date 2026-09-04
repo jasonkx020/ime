@@ -1,13 +1,19 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
+
+use parking_lot::Mutex;
+use yc_lexicon::UserWordStore;
+use yc_scheme::SchemeDesc;
+use yc_scheme::TransformKind;
+use yc_types::{
+    Candidate, EditorId, EngineError, EngineStep, HotResult, InputMode, LangPackEngineSpec,
+};
 
 use crate::data_driven::DataDrivenEngine;
 use crate::latin::LatinPredictEngine;
 use crate::InputEngine;
-use yc_scheme::TransformKind;
-use yc_scheme::SchemeDesc;
-use yc_types::{EditorId, EngineError, EngineStep, HotResult, InputMode, LangPackEngineSpec};
 
 #[derive(Debug)]
 enum EngineSlotInner {
@@ -27,6 +33,7 @@ pub struct EngineFactory {
     slots: HashMap<String, RegisteredPack>,
     active_pack: Option<String>,
     active_editor: EditorId,
+    user_words: Arc<Mutex<UserWordStore>>,
 }
 
 impl EngineFactory {
@@ -35,6 +42,34 @@ impl EngineFactory {
             slots: HashMap::new(),
             active_pack: None,
             active_editor: EditorId::NONE,
+            user_words: UserWordStore::shared(),
+        }
+    }
+
+    pub fn with_user_words(store: Arc<Mutex<UserWordStore>>) -> Self {
+        Self {
+            slots: HashMap::new(),
+            active_pack: None,
+            active_editor: EditorId::NONE,
+            user_words: store,
+        }
+    }
+
+    pub fn user_words(&self) -> Arc<Mutex<UserWordStore>> {
+        self.user_words.clone()
+    }
+
+    pub fn set_user_words_path(&self, path: impl AsRef<Path>) {
+        let opened = UserWordStore::open_or_create(path.as_ref());
+        let mut dst = self.user_words.lock();
+        *dst = opened.lock().clone();
+        dst.set_path(path.as_ref().to_path_buf());
+    }
+
+    fn attach_user_words(&self, slot: &mut EngineSlotInner) {
+        match slot {
+            EngineSlotInner::Latin(l) => l.set_user_words(self.user_words.clone()),
+            EngineSlotInner::DataDriven(d) => d.set_user_words(self.user_words.clone()),
         }
     }
 
@@ -57,7 +92,7 @@ impl EngineFactory {
                 let bytes = fs::read(&path).map_err(|_| EngineError::Internal)?;
                 let desc =
                     SchemeDesc::from_bytes(&bytes).map_err(|_| EngineError::PackInvalid)?;
-                let slot = match desc.transform {
+                let mut slot = match desc.transform {
                     TransformKind::LatinPredict => {
                         let mut latin = LatinPredictEngine::new(spec.pack_id.clone());
                         latin.load_lexicon(&spec.pack_id, &spec.lexicon_path)?;
@@ -69,6 +104,7 @@ impl EngineFactory {
                         EngineSlotInner::DataDriven(engine)
                     }
                 };
+                self.attach_user_words(&mut slot);
                 engines.insert(scheme_id, slot);
             }
         }
@@ -76,10 +112,9 @@ impl EngineFactory {
         if engines.is_empty() {
             let mut latin = LatinPredictEngine::new(spec.pack_id.clone());
             latin.load_lexicon(&spec.pack_id, &spec.lexicon_path)?;
-            engines.insert(
-                spec.default_scheme_id.clone(),
-                EngineSlotInner::Latin(latin),
-            );
+            let mut slot = EngineSlotInner::Latin(latin);
+            self.attach_user_words(&mut slot);
+            engines.insert(spec.default_scheme_id.clone(), slot);
         }
 
         self.slots.insert(
@@ -209,6 +244,30 @@ impl EngineFactory {
             EngineSlotInner::Latin(l) => l.select(editor_id, candidate_id),
             EngineSlotInner::DataDriven(d) => d.select(editor_id, candidate_id),
         })
+    }
+
+    pub fn update_active_candidates(&mut self, cands: Vec<Candidate>) {
+        let _ = self.with_active(|e| {
+            match e {
+                EngineSlotInner::Latin(l) => l.set_last_candidates(cands),
+                EngineSlotInner::DataDriven(d) => d.set_last_candidates(cands),
+            }
+            Ok(())
+        });
+    }
+
+    pub fn active_query_key(&mut self) -> String {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::Latin(l) => l.last_query_key().to_string(),
+                EngineSlotInner::DataDriven(d) => d.last_query_key().to_string(),
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    pub fn touch_user_word(&mut self, pinyin: &str, word: &str) {
+        self.user_words.lock().touch(pinyin, word);
     }
 }
 

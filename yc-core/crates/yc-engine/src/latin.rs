@@ -1,8 +1,11 @@
 //! Latin predict engine for OTA langpacks (vi/id/ms).
 
-use yc_lexicon::LexiconManager;
+use std::sync::Arc;
+
+use parking_lot::Mutex;
+use yc_lexicon::{LexiconManager, UserWordStore};
 use yc_types::{
-    ComposingText, EditorId, EngineError, EngineStep, HotResult, InputMode, UiCommand,
+    Candidate, ComposingText, EditorId, EngineError, EngineStep, HotResult, InputMode, UiCommand,
 };
 
 use crate::{invalid_session, key_code_to_char, session_invalid, InputEngine};
@@ -13,6 +16,8 @@ pub struct LatinPredictEngine {
     composing: String,
     lexicon: LexiconManager,
     pack_id: String,
+    last_candidates: Vec<Candidate>,
+    last_query_key: String,
 }
 
 impl LatinPredictEngine {
@@ -22,6 +27,8 @@ impl LatinPredictEngine {
             composing: String::new(),
             lexicon: LexiconManager::new(),
             pack_id,
+            last_candidates: Vec::new(),
+            last_query_key: String::new(),
         }
     }
 
@@ -32,7 +39,25 @@ impl LatinPredictEngine {
         Ok(())
     }
 
-    fn step(&self, composing: String, candidates: Vec<yc_types::Candidate>) -> EngineStep {
+    pub fn set_user_words(&mut self, store: Arc<Mutex<UserWordStore>>) {
+        self.lexicon.set_user_words(store);
+    }
+
+    pub fn set_last_candidates(&mut self, cands: Vec<Candidate>) {
+        self.last_candidates = cands;
+    }
+
+    pub fn last_query_key(&self) -> &str {
+        &self.last_query_key
+    }
+
+    pub fn touch_user_word(&self, pinyin: &str, word: &str) {
+        self.lexicon.touch_user_word(pinyin, word);
+    }
+
+    fn step(&mut self, composing: String, candidates: Vec<Candidate>) -> EngineStep {
+        self.last_query_key = composing.clone();
+        self.last_candidates = candidates.clone();
         EngineStep {
             composing: ComposingText {
                 text: composing.clone(),
@@ -48,6 +73,8 @@ impl InputEngine for LatinPredictEngine {
     fn reset(&mut self, editor_id: EditorId) {
         self.active = editor_id;
         self.composing.clear();
+        self.last_candidates.clear();
+        self.last_query_key.clear();
     }
 
     fn feed(
@@ -62,6 +89,7 @@ impl InputEngine for LatinPredictEngine {
         if key_code == b' ' as u32 {
             let text = self.composing.clone();
             self.composing.clear();
+            self.last_candidates.clear();
             return Ok(EngineStep {
                 composing: ComposingText::empty(),
                 candidates: Vec::new(),
@@ -78,13 +106,21 @@ impl InputEngine for LatinPredictEngine {
         if invalid_session(editor_id, self.active) {
             return session_invalid();
         }
-        let cands = self.lexicon.lookup(&self.composing);
-        let text = cands
+        let text = self
+            .last_candidates
             .iter()
             .find(|c| c.id == candidate_id)
             .map(|c| c.text.clone())
+            .or_else(|| {
+                self.lexicon
+                    .lookup(&self.composing)
+                    .into_iter()
+                    .find(|c| c.id == candidate_id)
+                    .map(|c| c.text)
+            })
             .ok_or(EngineError::Unsupported)?;
         self.composing.clear();
+        self.last_candidates.clear();
         Ok(EngineStep {
             composing: ComposingText::empty(),
             candidates: Vec::new(),

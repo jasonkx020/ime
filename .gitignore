@@ -1,4 +1,5 @@
 yc-core/target/
+services/yc-admin/data/
 fixtures/langpacks/zh-pack-v1/lexicon/zh_words.tsv
 fixtures/langpacks/zh-pack-v1/lexicon/zh_words.dat
 fixtures/cache/

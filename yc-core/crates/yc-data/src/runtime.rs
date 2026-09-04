@@ -181,11 +181,18 @@ impl ColdPathRuntime {
             ColdKind::LangPackCatalog => {
                 #[cfg(feature = "plugin")]
                 {
-                    let entries = plugin.lock().list_catalog_local();
-                    (
-                        serde_json::to_vec(&entries).unwrap_or_default(),
-                        0,
-                    )
+                    let payload_str = String::from_utf8_lossy(payload);
+                    let trimmed = payload_str.trim();
+                    let mut host = plugin.lock();
+                    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+                        match host.fetch_catalog(trimmed) {
+                            Ok(cat) => (serde_json::to_vec(&cat).unwrap_or_default(), 0),
+                            Err(_) => (Vec::new(), -1),
+                        }
+                    } else {
+                        let entries = host.list_catalog();
+                        (serde_json::to_vec(&entries).unwrap_or_default(), 0)
+                    }
                 }
                 #[cfg(not(feature = "plugin"))]
                 (Vec::new(), -1)
@@ -197,6 +204,24 @@ impl ColdPathRuntime {
                     "confidence": 0.85
                 });
                 (serde_json::to_vec(&preview).unwrap_or_default(), 0)
+            }
+            ColdKind::AiPolish | ColdKind::AiAssist => {
+                match serde_json::from_slice::<yc_types::TaskReq>(payload) {
+                    Ok(req) => {
+                        let svc = yc_ai::AiAssistService::new();
+                        let privacy = yc_types::PrivacyLevel::Normal;
+                        let result = if kind == ColdKind::AiPolish {
+                            svc.polish(privacy, &req)
+                        } else {
+                            svc.suggest(privacy, &req)
+                        };
+                        match result {
+                            Ok(out) => (serde_json::to_vec(&out).unwrap_or_default(), 0),
+                            Err(_) => (Vec::new(), -1),
+                        }
+                    }
+                    Err(_) => (Vec::new(), -1),
+                }
             }
         }
     }

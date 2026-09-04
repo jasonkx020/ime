@@ -7,3 +7,4 @@ edition.workspace = true
 yc-types = { path = "../yc-types" }
 memmap2 = "0.9"
 thiserror.workspace = true
+parking_lot.workspace = true

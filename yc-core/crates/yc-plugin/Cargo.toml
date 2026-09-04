@@ -8,3 +8,8 @@ yc-types = { path = "../yc-types" }
 yc-pack = { path = "../yc-pack" }
 yc-layout = { path = "../yc-layout" }
 thiserror.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2.12", features = ["json"] }
+sha2 = "0.10"
+hex = "0.4"

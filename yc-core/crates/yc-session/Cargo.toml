@@ -8,6 +8,7 @@ yc-types = { path = "../yc-types" }
 yc-engine = { path = "../yc-engine" }
 yc-handwriting = { path = "../yc-handwriting" }
 yc-lexicon = { path = "../yc-lexicon" }
+yc-intel = { path = "../yc-intel" }
 parking_lot.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true

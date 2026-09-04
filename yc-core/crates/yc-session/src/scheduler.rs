@@ -1,24 +1,35 @@
 use yc_engine::EngineFactory;
 use yc_handwriting::HandwritingService;
+use yc_intel::{LightIntel, UserBoostIntel};
 use yc_types::{
     ComposingText, EditorId, EngineError, HotOutcome, ImmSnapshot, InputScheme, KeyboardLayout,
-    Language, UiCommand, UserAction,
+    Language, PrivacyLevel, UiCommand, UserAction,
 };
 
 use crate::langpack::EnabledLangPack;
 use crate::manager::SessionManager;
 
-#[derive(Debug)]
 pub struct Scheduler {
     factory: EngineFactory,
     enabled_packs: Vec<EnabledLangPack>,
+    intel: Box<dyn LightIntel>,
 }
 
 impl Scheduler {
     pub fn new(factory: EngineFactory) -> Self {
+        let store = factory.user_words();
         Self {
             factory,
             enabled_packs: Vec::new(),
+            intel: Box::new(UserBoostIntel::new(store)),
+        }
+    }
+
+    pub fn with_intel(factory: EngineFactory, intel: Box<dyn LightIntel>) -> Self {
+        Self {
+            factory,
+            enabled_packs: Vec::new(),
+            intel,
         }
     }
 
@@ -116,6 +127,13 @@ impl Scheduler {
             }
             other => {
                 self.factory.set_active_editor(editor_id);
+                let learn_key = match &other {
+                    UserAction::SelectCandidate { .. } => self.factory.active_query_key(),
+                    UserAction::KeyPress { key_code } if *key_code == b' ' as u32 => {
+                        self.factory.active_query_key()
+                    }
+                    _ => String::new(),
+                };
                 let step = match other {
                     UserAction::Init => {
                         self.factory.reset_active(editor_id);
@@ -135,7 +153,7 @@ impl Scheduler {
                     }
                     _ => return Err(EngineError::Unsupported),
                 };
-                self.finish_step(sessions, editor_id, step)
+                self.finish_step(sessions, editor_id, step, learn_key)
             }
         }
     }
@@ -486,8 +504,33 @@ impl Scheduler {
         &mut self,
         sessions: &mut SessionManager,
         editor_id: EditorId,
-        step: yc_types::EngineStep,
+        mut step: yc_types::EngineStep,
+        learn_key: String,
     ) -> Result<HotOutcome, EngineError> {
+        let privacy = sessions
+            .privacy_of(editor_id)
+            .unwrap_or(PrivacyLevel::Normal);
+
+        if !step.candidates.is_empty() {
+            let prefix = step.composing.text.clone();
+            let cands = std::mem::take(&mut step.candidates);
+            if let Ok(ranked) = self.intel.rerank(&prefix, cands) {
+                step.candidates = ranked;
+                self.factory
+                    .update_active_candidates(step.candidates.clone());
+            }
+        }
+
+        if privacy == PrivacyLevel::Normal {
+            for cmd in &step.commands {
+                if let UiCommand::Commit { text } = cmd {
+                    if !learn_key.is_empty() && !text.is_empty() {
+                        self.factory.touch_user_word(&learn_key, text);
+                    }
+                }
+            }
+        }
+
         sessions.update_composing(editor_id, step.composing.clone());
         let seq = sessions.bump_seq(editor_id);
         let input_mode = sessions.input_mode(editor_id).unwrap_or_default();

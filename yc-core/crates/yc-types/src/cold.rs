@@ -1,4 +1,4 @@
-//! Cold-path request kinds (M3/M3.5).
+//! Cold-path request kinds (M3/M3.5/M4).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -9,6 +9,8 @@ pub enum ColdKind {
     LangPackDisable = 3,
     LangPackCatalog = 4,
     HandwritingCloud = 5,
+    AiPolish = 6,
+    AiAssist = 7,
 }
 
 impl ColdKind {
@@ -20,6 +22,8 @@ impl ColdKind {
             3 => Some(Self::LangPackDisable),
             4 => Some(Self::LangPackCatalog),
             5 => Some(Self::HandwritingCloud),
+            6 => Some(Self::AiPolish),
+            7 => Some(Self::AiAssist),
             _ => None,
         }
     }

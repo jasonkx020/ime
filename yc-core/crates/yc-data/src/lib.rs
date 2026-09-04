@@ -2,9 +2,11 @@
 
 mod repository;
 mod runtime;
+mod user_words;
 
 pub use repository::Repository;
 pub use runtime::{ColdCallback, ColdPathRuntime};
+pub use user_words::open_user_words;
 
 #[cfg(test)]
 mod tests {

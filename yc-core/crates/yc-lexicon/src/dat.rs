@@ -4,8 +4,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use memmap2::Mmap;
+use parking_lot::Mutex;
 use yc_types::{Candidate, CandidateSource, EngineError, HotResult, MAX_CANDIDATES};
 
+use crate::user_words::{merge_user_boosts, UserWordStore};
 use crate::LangLexiconHandle;
 
 pub const LEXICON_MAGIC: &[u8; 4] = b"YCLX";
@@ -208,11 +210,20 @@ pub struct LexiconManager {
     handles: HashMap<String, LangLexiconHandle>,
     next_handle: u64,
     active_pack: Option<String>,
+    user_words: Option<Arc<Mutex<UserWordStore>>>,
 }
 
 impl LexiconManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_user_words(&mut self, store: Arc<Mutex<UserWordStore>>) {
+        self.user_words = Some(store);
+    }
+
+    pub fn user_words(&self) -> Option<Arc<Mutex<UserWordStore>>> {
+        self.user_words.clone()
     }
 
     pub fn open_lang(&mut self, pack_id: &str, path: &str) -> HotResult<()> {
@@ -238,21 +249,41 @@ impl LexiconManager {
     }
 
     pub fn lookup(&self, prefix: &str) -> Vec<Candidate> {
-        if let Some(id) = &self.active_pack {
+        let mut cands = if let Some(id) = &self.active_pack {
             if let Some(lex) = self.packs.get(id) {
-                return lex.lookup(prefix);
+                lex.lookup(prefix)
+            } else {
+                Vec::new()
             }
+        } else {
+            Vec::new()
+        };
+        if let Some(store) = &self.user_words {
+            cands = merge_user_boosts(prefix, cands, &store.lock());
         }
-        Vec::new()
+        cands
     }
 
     pub fn lookup_pinyin(&self, composing: &str, syllables: &[String]) -> Vec<Candidate> {
-        if let Some(id) = &self.active_pack {
+        let mut cands = if let Some(id) = &self.active_pack {
             if let Some(lex) = self.packs.get(id) {
-                return lex.lookup_pinyin(composing, syllables);
+                lex.lookup_pinyin(composing, syllables)
+            } else {
+                Vec::new()
             }
+        } else {
+            Vec::new()
+        };
+        if let Some(store) = &self.user_words {
+            cands = merge_user_boosts(composing, cands, &store.lock());
         }
-        Vec::new()
+        cands
+    }
+
+    pub fn touch_user_word(&self, pinyin: &str, word: &str) {
+        if let Some(store) = &self.user_words {
+            store.lock().touch(pinyin, word);
+        }
     }
 }
 

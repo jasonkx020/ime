@@ -113,6 +113,21 @@
 
 
 
+## 管理后台（Go）
+
+语言包发布、用户画像与选词习惯优化服务见 [`services/yc-admin/`](services/yc-admin/)：
+
+```powershell
+cd services/yc-admin
+go mod tidy
+go run ./cmd/yc-admin
+# 打开 http://127.0.0.1:8080/  （Token 默认 dev-token）
+```
+
+客户端可拉取 `GET /api/v1/catalog` 与 `GET /api/v1/personalization/{device_id}`，上报 `POST /api/v1/habits/events`（仅隐私允许）。
+
+
+
 ## 构建 yc-core（Rust 核心）
 
 需安装 [Rust](https://rustup.rs/) 工具链。

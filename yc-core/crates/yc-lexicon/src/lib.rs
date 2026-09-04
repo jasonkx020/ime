@@ -2,12 +2,14 @@
 
 mod dat;
 mod pinyin_match;
+mod user_words;
 
 pub use dat::{
     compile_merged_tsv, compile_tsv_to_dat, normalize_romanized, DatLexicon, LexiconManager,
     LEXICON_MAGIC, LEXICON_VERSION,
 };
 pub use pinyin_match::{is_valid_prefix, key_matches_composing, split_syllables};
+pub use user_words::{merge_user_boosts, UserWordStore};
 
 use yc_types::{Candidate, EngineError, HotResult};
 

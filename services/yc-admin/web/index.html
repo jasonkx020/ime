@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YC Admin · 语言包与用户习惯</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">YC Admin</div>
+    <p class="tagline">语言包发布 · 用户画像 · 选词自动优化</p>
+    <label class="token">Token <input id="token" type="password" placeholder="X-Admin-Token" /></label>
+  </header>
+
+  <main>
+    <section class="cards" id="dashboard"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>语言包</h2>
+        <button id="btn-refresh-packs" type="button">刷新</button>
+      </div>
+      <form id="create-pack" class="row">
+        <input name="pack_id" placeholder="pack_id 如 zh-pack-v1" required />
+        <input name="lang" placeholder="lang 如 zh" required />
+        <input name="display_name" placeholder="显示名" />
+        <input name="version" type="number" min="1" value="1" />
+        <button type="submit">新建草稿</button>
+      </form>
+      <div class="table-wrap"><table id="packs-table"><thead>
+        <tr><th>ID</th><th>Pack</th><th>Lang</th><th>Ver</th><th>Status</th><th>Size</th><th>操作</th></tr>
+      </thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>用户画像 / 选词 boost</h2>
+        <button id="btn-rebuild-all" type="button">重建全部活跃画像</button>
+      </div>
+      <form id="lookup-profile" class="row">
+        <input id="device-id" placeholder="device_id" required />
+        <button type="submit">查看画像</button>
+        <button id="btn-rebuild-one" type="button">重建并优化</button>
+      </form>
+      <pre id="profile-out" class="code"></pre>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>习惯事件试投</h2></div>
+      <p class="hint">仅 privacy_ok=true 的事件会入库；客户端勿上传 composing 明文。</p>
+      <button id="btn-demo-habits" type="button">注入演示选词数据</button>
+      <pre id="habit-out" class="code"></pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

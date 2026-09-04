@@ -202,6 +202,9 @@ fn print_help(stdout: &mut impl Write) {
     let _ = writeln!(stdout, "  /disable_lang <id>    禁用语言包");
     let _ = writeln!(stdout, "  /switch_lang <id>     切换输入语言");
     let _ = writeln!(stdout, "  /list_langs           列出已安装语言包");
+    let _ = writeln!(stdout, "  /catalog [url]        拉取远程 Catalog（默认 yc-admin）");
+    let _ = writeln!(stdout, "  /ai greeting|thanks|apology  本地 AI 模板建议");
+    let _ = writeln!(stdout, "  /ai polish <text>     AI 润色（stub/本地）");
     let _ = writeln!(stdout, "  /field <name>       切换输入框: default|password|number");
     let _ = writeln!(stdout, "  /help               显示帮助");
     let _ = writeln!(stdout, "  /quit               退出");
@@ -420,6 +423,23 @@ fn main() {
             let pack = app.fixture("fixtures/dist/vi-v1.imepack");
             let _ = writeln!(stdout, "fixture: {}", pack.display());
             let _ = writeln!(stdout, "使用 /install_lang /enable_lang /switch_lang vi-v1 验收");
+        } else if line == "/catalog" || line.starts_with("/catalog ") {
+            let url = line
+                .strip_prefix("/catalog")
+                .unwrap_or("")
+                .trim();
+            let url = if url.is_empty() {
+                "http://127.0.0.1:8080/api/v1/catalog"
+            } else {
+                url
+            };
+            let rc = app.cold_submit_id(ColdKind::LangPackCatalog, url);
+            thread::sleep(Duration::from_millis(200));
+            let _ = writeln!(
+                stdout,
+                "fetch catalog {} rc={} (需 yc-admin 已启动；结果经冷路径回调)",
+                url, rc
+            );
         } else if let Some(rest) = line.strip_prefix("/layout ") {
             if let Some(layout) = parse_layout(rest.trim()) {
                 let rc = app.submit(HotActionType::SwitchLayout, layout.raw(), 0);
@@ -458,6 +478,59 @@ fn main() {
                 rest.trim(),
                 input_type
             );
+        } else if let Some(rest) = line.strip_prefix("/ai ") {
+            let rest = rest.trim();
+            let svc = yc_ai::AiAssistService::new();
+            let privacy = yc_types::PrivacyLevel::Normal;
+            if let Some(text) = rest.strip_prefix("polish ") {
+                let req = yc_types::TaskReq {
+                    editor_id: app.editor_id,
+                    mode: yc_types::AiMode::Polish.raw(),
+                    scene_id: "polish".into(),
+                    peer_message: String::new(),
+                    background_note: String::new(),
+                    selection_text: text.trim().into(),
+                    user_intent: String::new(),
+                };
+                let preview = svc.preview_payload(&req);
+                let _ = writeln!(stdout, "preview: {}", preview.summary);
+                match svc.polish(privacy, &req) {
+                    Ok(out) => {
+                        for (i, v) in out.variants.iter().enumerate() {
+                            let _ = writeln!(stdout, "  [{}] ({}) {}", i + 1, v.tone, v.text);
+                        }
+                    }
+                    Err(e) => {
+                        let _ = writeln!(stdout, "AI 润色失败: {:?}", e);
+                    }
+                }
+            } else {
+                let scene = if rest.is_empty() { "greeting" } else { rest };
+                let req = yc_types::TaskReq {
+                    editor_id: app.editor_id,
+                    mode: yc_types::AiMode::Compose.raw(),
+                    scene_id: scene.into(),
+                    peer_message: String::new(),
+                    background_note: String::new(),
+                    selection_text: String::new(),
+                    user_intent: String::new(),
+                };
+                match svc.suggest(privacy, &req) {
+                    Ok(out) => {
+                        let _ = writeln!(
+                            stdout,
+                            "AI suggest scene={} local={}",
+                            scene, out.local
+                        );
+                        for (i, v) in out.variants.iter().enumerate() {
+                            let _ = writeln!(stdout, "  [{}] ({}) {}", i + 1, v.tone, v.text);
+                        }
+                    }
+                    Err(e) => {
+                        let _ = writeln!(stdout, "AI 失败: {:?}", e);
+                    }
+                }
+            }
         } else if line == "/pinyin" || line == "/zh" {
             let pack = app.fixture("fixtures/dist/zh-pack-v1.imepack");
             if pack.exists() {

@@ -17,7 +17,9 @@
 | `yc-data` | 冷路径队列 + Repository（M3/M3.5） |
 | `yc-ffi` | C ABI、`HotArena`、冷路径回调 |
 | `yc-cli` | 桌面 REPL（M3/M3.5 验收） |
-| `yc-intel` / `yc-ai` / `yc-ext` | 后续里程碑 stub |
+| `yc-intel` / `yc-ai` / `yc-ext` | LightIntel 用户词重排；AiAssistService（隐私门禁+本地模板+Stub 云）；ExtensionHost stub |
+
+> **AI 边界**：`yc-ai` 只做编排与门禁（P2 冷路径）；LLM HTTP 经 `CloudLlmClient` trait，禁止进热路径。面板 UI 在壳层。
 
 ## 构建
 

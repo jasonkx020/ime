@@ -8,6 +8,7 @@ yc-lexicon = { path = "../yc-lexicon" }
 yc-types = { path = "../yc-types" }
 yc-scheme = { path = "../yc-scheme" }
 thiserror.workspace = true
+parking_lot.workspace = true
 
 [dev-dependencies]
 yc-pack = { path = "../yc-pack" }
