@@ -13,13 +13,13 @@ try {
     if (-not (Test-Path $dll)) {
         throw "yc_ffi.dll not found at $dll"
     }
-    $DestDir = Join-Path $RepoRoot "yc-shell-windows\libs\x64"
+    $DestDir = Join-Path $RepoRoot "platforms\yc-shell-windows\libs\x64"
     New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
     Copy-Item -Force $dll (Join-Path $DestDir "yc_ffi.dll")
     if (Test-Path $lib) {
         Copy-Item -Force $lib (Join-Path $DestDir "yc_ffi.dll.lib")
     }
-    $LinuxDest = Join-Path $RepoRoot "yc-shell-linux\libs\x86_64"
+    $LinuxDest = Join-Path $RepoRoot "platforms\yc-shell-linux\libs\x86_64"
     Write-Host "Copied $dll -> $DestDir"
 } finally {
     Pop-Location

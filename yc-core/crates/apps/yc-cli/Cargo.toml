@@ -1,0 +1,15 @@
+[package]
+name = "yc-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "yc-cli"
+path = "src/main.rs"
+
+[dependencies]
+yc-ffi = { path = "../../boundary/yc-ffi", features = ["data", "ai"] }
+yc-types = { path = "../../foundation/yc-types" }
+yc-handwriting = { path = "../../features/yc-handwriting" }
+yc-theme = { path = "../../cold/yc-theme" }
+yc-ai = { path = "../../features/yc-ai" }

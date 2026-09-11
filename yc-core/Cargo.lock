@@ -990,7 +990,6 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
- "yc-ai",
  "yc-lexicon",
  "yc-pack",
  "yc-plugin",
@@ -1022,6 +1021,7 @@ name = "yc-ffi"
 version = "0.1.0"
 dependencies = [
  "parking_lot",
+ "serde_json",
  "yc-ai",
  "yc-data",
  "yc-engine",
@@ -1039,7 +1039,6 @@ name = "yc-handwriting"
 version = "0.1.0"
 dependencies = [
  "yc-types",
- "zeroize",
 ]
 
 [[package]]

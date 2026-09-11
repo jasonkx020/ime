@@ -20,7 +20,7 @@ Arena 现含 `YcUiCommandSlot`（Commit/SetComposing 等），各端 parser 需�
 ## Android
 
 1. `yc-core\scripts\build-android-ndk.ps1`（真机 libyc_ffi.so）
-2. Android Studio 打开 `yc-shell-android`，Sync & Run
+2. Android Studio 打开 `platforms/yc-shell-android`，Sync & Run
 3. 启用 YC Input，输入 `nihao` → 点候选「你好」→ 上屏
 4. Logcat：`YcImeService`
 
@@ -28,15 +28,15 @@ Arena 现含 `YcUiCommandSlot`（Commit/SetComposing 等），各端 parser 需�
 
 ```powershell
 yc-core\scripts\build-desktop.ps1
-cmake -S yc-shell-windows -B yc-shell-windows\build
-cmake --build yc-shell-windows\build --config Release
+cmake -S platforms/yc-shell-windows -B platforms/yc-shell-windows\build
+cmake --build platforms/yc-shell-windows\build --config Release
 ```
 
 DebugView：`[yc_tip] M1 smoke rc=0 commit=你好`
 
 ## Linux
 
-复制 `libyc_ffi.so` → `yc-shell-linux/libs/x86_64/`，CMake 构建后加载 ibus-yc / fcitx5-yc，stderr 见 M1 commit 日志。
+复制 `libyc_ffi.so` → `platforms/yc-shell-linux/libs/x86_64/`，CMake 构建后加载 ibus-yc / fcitx5-yc，stderr 见 M1 commit 日志。
 
 ## iOS
 
@@ -47,13 +47,13 @@ DebugView：`[yc_tip] M1 smoke rc=0 commit=你好`
 ## macOS
 
 ```bash
-cd yc-shell-macos && swift build
+cd platforms/yc-shell-macos && swift build
 .build/debug/YcInputServer   # 打印 M1 commit
 ```
 
 ## 鸿蒙
 
-DevEco 打开 `yc-shell-harmonyos`；Hilog 见 `commit:` 日志。
+DevEco 打开 `platforms/yc-shell-harmonyos`；Hilog 见 `commit:` 日志。
 
 ## 验收清单
 

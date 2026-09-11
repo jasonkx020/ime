@@ -17,7 +17,7 @@ cargo test --workspace
 cargo build -p yc-ffi --features full --release
 ```
 
-构建 fixture：`vi-v1`、`th-v1`、`zh-pack-v1` 语言包 + `samsung-light` 皮肤（见 `fixtures/dist/`）。
+构建 fixture：`vi-v1`、`th-v1`、`zh-pack-v1` 语言包 + `samsung-light` 皮肤（见 `assets/dist/`）。
 
 ## M3：皮肤换肤
 
@@ -70,7 +70,7 @@ cargo test -p yc-engine --test p2_schemes
 
 | 端 | LayoutLoader | ReloadKeyboard |
 |----|--------------|----------------|
-| Android | `yc-ui-android/.../LayoutLoader.kt` | `YcImeService.refreshUi` |
+| Android | `platforms/yc-ui-android/.../LayoutLoader.kt` | `YcImeService.refreshUi` |
 | iOS | `YcKeyboard/LayoutLoader.swift` | `YcBridge.refreshIfNeeded` |
 | 鸿蒙 | `YcArena.ets` + Extension 日志 | `InputMethodExtensionAbility` |
 | macOS | `YcArena.swift` | `YcInputServer` |
@@ -86,8 +86,8 @@ cargo test -p yc-engine --test p2_schemes
 
 | 组件 | 路径 |
 |------|------|
-| LangPackSlot / Registry | `yc-core/crates/yc-plugin` |
-| Scheme 编译/运行时 | `yc-core/crates/yc-scheme` |
-| Layout 编译/运行时 | `yc-core/crates/yc-layout` |
-| DataDrivenEngine | `yc-core/crates/yc-engine` |
+| LangPackSlot / Registry | `yc-core/crates/cold/yc-plugin` |
+| Scheme 编译/运行时 | `yc-core/crates/hot/yc-scheme` |
+| Layout 编译/运行时 | `yc-core/crates/hot/yc-layout` |
+| DataDrivenEngine | `yc-core/crates/hot/yc-engine` |
 | ime-pack CLI | `tools/ime-pack` |

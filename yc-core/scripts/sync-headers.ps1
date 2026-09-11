@@ -5,20 +5,20 @@ $RepoRoot = Split-Path -Parent $Root
 
 $HeaderPairs = @(
     @("yc_hot.h", @(
-        (Join-Path $RepoRoot "yc-shell-android\yc-native\src\main\jniLibs\include\yc_hot.h"),
-        (Join-Path $RepoRoot "yc-shell-ios\YcKeyboard\Bridge\yc_hot.h"),
-        (Join-Path $RepoRoot "yc-shell-harmonyos\yc_native\include\yc_hot.h"),
-        (Join-Path $RepoRoot "yc-shell-windows\yc_tip\include\yc_hot.h"),
-        (Join-Path $RepoRoot "yc-shell-macos\Bridge\yc_hot.h"),
-        (Join-Path $RepoRoot "yc-shell-linux\common\include\yc_hot.h")
+        (Join-Path $RepoRoot "platforms\yc-shell-android\yc-native\src\main\jniLibs\include\yc_hot.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-ios\YcKeyboard\Bridge\yc_hot.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-harmonyos\yc_native\include\yc_hot.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-windows\yc_tip\include\yc_hot.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-macos\Bridge\yc_hot.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-linux\common\include\yc_hot.h")
     )),
     @("yc_layout.h", @(
-        (Join-Path $RepoRoot "yc-shell-android\yc-native\src\main\jniLibs\include\yc_layout.h"),
-        (Join-Path $RepoRoot "yc-shell-ios\YcKeyboard\Bridge\yc_layout.h"),
-        (Join-Path $RepoRoot "yc-shell-harmonyos\yc_native\include\yc_layout.h"),
-        (Join-Path $RepoRoot "yc-shell-windows\yc_tip\include\yc_layout.h"),
-        (Join-Path $RepoRoot "yc-shell-macos\Bridge\yc_layout.h"),
-        (Join-Path $RepoRoot "yc-shell-linux\common\include\yc_layout.h")
+        (Join-Path $RepoRoot "platforms\yc-shell-android\yc-native\src\main\jniLibs\include\yc_layout.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-ios\YcKeyboard\Bridge\yc_layout.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-harmonyos\yc_native\include\yc_layout.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-windows\yc_tip\include\yc_layout.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-macos\Bridge\yc_layout.h"),
+        (Join-Path $RepoRoot "platforms\yc-shell-linux\common\include\yc_layout.h")
     ))
 )
 

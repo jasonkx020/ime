@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $RepoRoot = Split-Path -Parent $Root
-$OutBase = Join-Path $RepoRoot "yc-shell-android\yc-native\src\main\jniLibs"
+$OutBase = Join-Path $RepoRoot "platforms\yc-shell-android\yc-native\src\main\jniLibs"
 
 Push-Location $Root
 try {

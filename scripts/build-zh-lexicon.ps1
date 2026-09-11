@@ -2,9 +2,9 @@
 # Sources: mozillazg/phrase-pinyin-data (MIT), mozillazg/pinyin-data (MIT), THUOCL (MIT).
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$LexDir = Join-Path $RepoRoot "fixtures\langpacks\zh-pack-v1\lexicon"
-$CacheDir = Join-Path $RepoRoot "fixtures\cache\pinyin"
-$ThuoclDir = Join-Path $RepoRoot "fixtures\cache\thuocl"
+$LexDir = Join-Path $RepoRoot "assets\langpacks\zh-pack-v1\lexicon"
+$CacheDir = Join-Path $RepoRoot "assets\cache\pinyin"
+$ThuoclDir = Join-Path $RepoRoot "assets\cache\thuocl"
 $Sample = Join-Path $LexDir "zh_words.sample.tsv"
 $OutTsv = Join-Path $LexDir "zh_words.tsv"
 $CoreTsv = Join-Path $LexDir "zh_words.core.tsv"
@@ -25,7 +25,7 @@ function Ensure-Download($Url, $Dest) {
     }
 }
 
-Write-Host "==> Fetch pinyin sources (cached under fixtures/cache)"
+Write-Host "==> Fetch pinyin sources (cached under assets/cache)"
 Ensure-Download $PhraseUrl $PhraseFile
 Ensure-Download $CharUrl $CharFile
 

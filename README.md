@@ -148,22 +148,26 @@ cd yc-core
 
 产物：`libyc_ffi`（`.dll` / `.so` / `.dylib`）、[`include/yc_hot.h`](yc-core/include/yc_hot.h)。
 
-当前实现范围（M0–M2.5 + **M1 六端热路径/皮肤脚手架**）：`yc-core` workspace、六端 `yc-shell-*`（M1 热路径 + Samsung UI）、`yc-ui-*`、`yc-cli` 桌面 REPL。
+当前实现范围（M0–M2.5 + **M1 六端热路径/皮肤脚手架**）：`yc-core` workspace、`platforms/yc-shell-*`（M1 热路径 + Samsung UI）、`platforms/yc-ui-*`、`yc-cli` 桌面 REPL。
 
 ### Monorepo 结构
 
 ```text
 ime-design/
-  yc-core/              # Rust workspace（yc-ffi 唯一 C ABI 边界）
-  yc-shell-android/     # InputMethodService + JNI
-  yc-shell-ios/         # Keyboard Extension + Swift
-  yc-shell-harmonyos/   # InputMethodExtensionAbility + NAPI
-  yc-shell-windows/     # TSF TIP + C++
-  yc-shell-macos/       # IMK Server + Swift
-  yc-shell-linux/       # IBus + Fcitx5
-  yc-ui-*/              # KeyView / CandBar 接口占位
+  yc-core/              # Rust workspace；crates 按 foundation/hot/cold/features/boundary/apps 分层
+  assets/               # 语言包 / 皮肤 / 构建产物（langpacks、skins、dist）
+  platforms/
+    yc-shell-android/   # InputMethodService + JNI
+    yc-shell-ios/       # Keyboard Extension + Swift
+    yc-shell-harmonyos/ # InputMethodExtensionAbility + NAPI
+    yc-shell-windows/   # TSF TIP + C++
+    yc-shell-macos/     # IMK Server + Swift
+    yc-shell-linux/     # IBus + Fcitx5
+    yc-ui-*/            # KeyView / CandBar 接口占位
   scripts/build-all.ps1 # 构建 yc-ffi + 同步头文件
 ```
+
+`yc-core` 分层与依赖禁令见 [`yc-core/README.md`](yc-core/README.md)。
 
 各端 smoke 验收见 [`docs/M0_SMOKE.md`](docs/M0_SMOKE.md)。
 
@@ -181,7 +185,7 @@ ime-design/
 
 
 
-本仓库包含**设计文档**、**`yc-core/` Rust 核心**、**六端 `yc-shell-*` M1 热路径脚手架**与 **Samsung UI 模块**，不含：
+本仓库包含**设计文档**、**`yc-core/` Rust 核心**、**`platforms/` 下六端 `yc-shell-*` M1 热路径脚手架**与 **Samsung UI 模块**，不含：
 
 - TSF/IMK 完整系统注册与 M5.5 桌面 MVP 深化
 

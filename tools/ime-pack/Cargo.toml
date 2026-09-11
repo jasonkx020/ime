@@ -8,7 +8,7 @@ name = "ime-pack"
 path = "src/main.rs"
 
 [dependencies]
-yc-pack = { path = "../../yc-core/crates/yc-pack" }
-yc-lexicon = { path = "../../yc-core/crates/yc-lexicon" }
+yc-pack = { path = "../../yc-core/crates/cold/yc-pack" }
+yc-lexicon = { path = "../../yc-core/crates/hot/yc-lexicon" }
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"

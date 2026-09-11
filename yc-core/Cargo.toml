@@ -1,22 +1,22 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/yc-types",
-    "crates/yc-lexicon",
-    "crates/yc-pack",
-    "crates/yc-theme",
-    "crates/yc-scheme",
-    "crates/yc-layout",
-    "crates/yc-engine",
-    "crates/yc-handwriting",
-    "crates/yc-session",
-    "crates/yc-plugin",
-    "crates/yc-data",
-    "crates/yc-intel",
-    "crates/yc-ai",
-    "crates/yc-ext",
-    "crates/yc-ffi",
-    "crates/yc-cli",
+    "crates/foundation/yc-types",
+    "crates/hot/yc-lexicon",
+    "crates/hot/yc-scheme",
+    "crates/hot/yc-layout",
+    "crates/hot/yc-intel",
+    "crates/hot/yc-engine",
+    "crates/hot/yc-session",
+    "crates/cold/yc-pack",
+    "crates/cold/yc-theme",
+    "crates/cold/yc-plugin",
+    "crates/cold/yc-data",
+    "crates/features/yc-handwriting",
+    "crates/features/yc-ai",
+    "crates/features/yc-ext",
+    "crates/boundary/yc-ffi",
+    "crates/apps/yc-cli",
 ]
 
 [workspace.package]

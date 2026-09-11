@@ -1,0 +1,14 @@
+[package]
+name = "yc-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-lexicon = { path = "../yc-lexicon" }
+yc-types = { path = "../../foundation/yc-types" }
+yc-scheme = { path = "../yc-scheme" }
+thiserror.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+yc-pack = { path = "../../cold/yc-pack" }

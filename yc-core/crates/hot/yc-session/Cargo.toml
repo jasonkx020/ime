@@ -1,0 +1,19 @@
+[package]
+name = "yc-session"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yc-types = { path = "../../foundation/yc-types" }
+yc-engine = { path = "../yc-engine" }
+yc-handwriting = { path = "../../features/yc-handwriting" }
+yc-lexicon = { path = "../yc-lexicon" }
+yc-intel = { path = "../yc-intel" }
+parking_lot.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+yc-handwriting = { path = "../../features/yc-handwriting" }
+yc-pack = { path = "../../cold/yc-pack" }
+yc-plugin = { path = "../../cold/yc-plugin" }

@@ -31,11 +31,11 @@ enum Commands {
         output: PathBuf,
     },
     BuildZhLexicon {
-        #[arg(long, default_value = "fixtures/cache/pinyin/phrase.txt")]
+        #[arg(long, default_value = "assets/cache/pinyin/phrase.txt")]
         phrase_pinyin: PathBuf,
-        #[arg(long, default_value = "fixtures/cache/pinyin/char.txt")]
+        #[arg(long, default_value = "assets/cache/pinyin/char.txt")]
         char_pinyin: PathBuf,
-        #[arg(long, default_value = "fixtures/langpacks/zh-pack-v1/lexicon/zh_words.sample.tsv")]
+        #[arg(long, default_value = "assets/langpacks/zh-pack-v1/lexicon/zh_words.sample.tsv")]
         sample_tsv: PathBuf,
         #[arg(long)]
         thuocl_dir: Option<PathBuf>,

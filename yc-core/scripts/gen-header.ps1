@@ -9,6 +9,6 @@ if (-not (Get-Command cbindgen -ErrorAction SilentlyContinue)) {
     exit 0
 }
 
-cbindgen crates/yc-ffi -c cbindgen.toml -o include/yc_hot.h
+cbindgen crates/boundary/yc-ffi -c cbindgen.toml -o include/yc_hot.h
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "Generated include/yc_hot.h"

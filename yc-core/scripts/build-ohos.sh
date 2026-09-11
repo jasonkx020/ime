@@ -3,13 +3,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$ROOT/.." && pwd)"
-OUT="$REPO_ROOT/yc-shell-harmonyos/yc_native/libs/arm64-v8a"
+OUT="$REPO_ROOT/platforms/yc-shell-harmonyos/yc_native/libs/arm64-v8a"
 TARGET="aarch64-unknown-linux-ohos"
 
 cd "$ROOT"
 if ! rustup target list --installed | grep -q "$TARGET"; then
   echo "WARN: $TARGET not installed. Install OHOS Rust toolchain first."
-  echo "See yc-shell-harmonyos/README.md"
+  echo "See platforms/yc-shell-harmonyos/README.md"
   exit 0
 fi
 

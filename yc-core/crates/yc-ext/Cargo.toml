@@ -1,7 +1,0 @@
-[package]
-name = "yc-ext"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-yc-types = { path = "../yc-types" }

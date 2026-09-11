@@ -37,7 +37,7 @@
 
 ```text
 yc 前缀层（产品 / 厂商边界）
-  ├── 仓库与目录：yc-core、yc-shell-android
+  ├── 仓库与目录：yc-core、platforms/yc-shell-android
   ├── Rust crate：yc-ffi、yc-session
   ├── C FFI：yc_hot.h、yc_hot_submit
   └── 产物：libyc_ffi.so、yc_ffi.dll
@@ -125,8 +125,8 @@ name = "yc_ffi"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-yc-session = { path = "../yc-session" }
-yc-engine  = { path = "../yc-engine" }
+yc-session = { path = "../../hot/yc-session" }
+yc-engine  = { path = "../../hot/yc-engine" }
 ```
 
 ### 3.2 C / C++（FFI 消费方）
@@ -154,7 +154,7 @@ yc-engine  = { path = "../yc-engine" }
 **目录示例**
 
 ```text
-yc-shell-android/
+platforms/yc-shell-android/
   app/
   yc-native/
     src/main/java/com/yc/input/native/YcNative.kt
@@ -181,15 +181,17 @@ yc-shell-android/
 
 ### 3.6 壳工程与 UI 仓库
 
-| 仓库 | 说明 |
+路径位于 monorepo `platforms/` 下（目录名仍为 `yc-shell-*` / `yc-ui-*`）：
+
+| 目录 | 说明 |
 |------|------|
-| `yc-shell-android` | `InputMethodService` + JNI |
-| `yc-shell-ios` | Keyboard Extension + Swift |
-| `yc-shell-harmonyos` | `InputMethodExtensionAbility` + NAPI |
-| `yc-shell-windows` | TSF TIP + C++ |
-| `yc-shell-macos` | IMK Server + Swift |
-| `yc-shell-linux` | IBus + Fcitx5 插件 |
-| `yc-ui-android` / `yc-ui-ios` / `yc-ui-harmonyos` / `yc-ui-desktop` | 各端 KeyView / CandBar |
+| `platforms/yc-shell-android` | `InputMethodService` + JNI |
+| `platforms/yc-shell-ios` | Keyboard Extension + Swift |
+| `platforms/yc-shell-harmonyos` | `InputMethodExtensionAbility` + NAPI |
+| `platforms/yc-shell-windows` | TSF TIP + C++ |
+| `platforms/yc-shell-macos` | IMK Server + Swift |
+| `platforms/yc-shell-linux` | IBus + Fcitx5 插件 |
+| `platforms/yc-ui-android` / `ios` / `harmonyos` / `desktop` | 各端 KeyView / CandBar |
 
 设计文档仓保留现名 `ime-design`；实现仓使用 `yc-design` 或继续托管于 monorepo 根目录，**以实现仓库 README 为准**。
 
@@ -362,7 +364,7 @@ yc-shell-android/
     ! nm target/release/libyc_ffi.so | grep -E ' ime_'
 - name: cbindgen sync
   run: |
-    cbindgen crates/yc-ffi -o include/yc_hot.h
+    cbindgen crates/boundary/yc-ffi -o include/yc_hot.h
     git diff --exit-code include/yc_hot.h
 ```
 

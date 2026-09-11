@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$ROOT/.." && pwd)"
-OUT="$REPO_ROOT/yc-shell-ios/Rust/yc_ffi.xcframework"
+OUT="$REPO_ROOT/platforms/yc-shell-ios/Rust/yc_ffi.xcframework"
 mkdir -p "$(dirname "$OUT")"
 
 cd "$ROOT"

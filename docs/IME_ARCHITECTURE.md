@@ -1735,9 +1735,9 @@ ime-ui-harmonyos/              # ArkUI KeyView / CandBar
 ime-ui-desktop/                # 共享桌面 UI 组件（可选：同一套 Qt/GTK 皮肤）
 ```
 
-> **yc-core 已实现（M0–M2.5）**：[`yc-core/`](../yc-core/) 含 `yc-ffi`…`yc-handwriting` 及 stub `yc-plugin`/`yc-data`/`yc-ai`/`yc-ext`/`yc-intel`；[`yc-cli`](../yc-core/crates/yc-cli/) 桌面 REPL 壳。
+> **yc-core 已实现（M0–M2.5）**：[`yc-core/`](../yc-core/) crates 按层落在 `crates/{foundation,hot,cold,features,boundary,apps}/yc-*`（包名不变）；含 `yc-ffi`…`yc-handwriting` 及 `yc-plugin`/`yc-data`/`yc-ai`/`yc-ext`/`yc-intel`；[`yc-cli`](../yc-core/crates/apps/yc-cli/) 桌面 REPL 壳。
 >
-> **六端壳 M0 脚手架**：[`yc-shell-android/`](../yc-shell-android/)、[`yc-shell-ios/`](../yc-shell-ios/)、[`yc-shell-harmonyos/`](../yc-shell-harmonyos/)、[`yc-shell-windows/`](../yc-shell-windows/)、[`yc-shell-macos/`](../yc-shell-macos/)、[`yc-shell-linux/`](../yc-shell-linux/)；UI 占位 [`yc-ui-*`](../yc-ui-android/)。
+> **六端壳 M0 脚手架**：[`yc-shell-android/`](../platforms/yc-shell-android/)、[`yc-shell-ios/`](../platforms/yc-shell-ios/)、[`yc-shell-harmonyos/`](../platforms/yc-shell-harmonyos/)、[`yc-shell-windows/`](../platforms/yc-shell-windows/)、[`yc-shell-macos/`](../platforms/yc-shell-macos/)、[`yc-shell-linux/`](../platforms/yc-shell-linux/)；UI 占位 [`yc-ui-*`](../platforms/yc-ui-android/)。
 
 ### 9.1 模块依赖
 
@@ -1774,7 +1774,7 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 |------|------|------|
 | **M0** | Rust workspace + ime-ffi | cbindgen 头文件；**六端**链接通过；空实现 smoke test |
 
-> **yc-core 已实现（M0 脚手架）**：六端 `yc-shell-*` 目录 + FFI 胶水 + `scripts/build-all.ps1`；`yc_cold_submit` 冷路径 stub。
+> **yc-core 已实现（M0 脚手架）**：`platforms/yc-shell-*` 六端目录 + FFI 胶水 + `scripts/build-all.ps1`；`yc_cold_submit` 冷路径 stub。
 | **M1** | 壳 + 热路径组词候选 + Session 隔离 | 拼音组词上屏 P95≤16ms；一框一会话；切换 wipe；validate 门禁 |
 
 > **yc M1 已实现**：六端 Arena 解析 + session/arena FFI；`yc-ui-*` Samsung 皮肤；Android `YcImeService` 端到端上屏；桌面 M1 smoke（`yc_platform_m1_smoke`）；详见 [`docs/M1_SMOKE.md`](../docs/M1_SMOKE.md)。
