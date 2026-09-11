@@ -15,8 +15,8 @@ use yc_ffi::{
 };
 use yc_handwriting::templates;
 use yc_types::{
-    ColdKind, HotActionType, InputScheme, KeyboardLayout, WritingMode, YC_OK, YcHotAction,
-    YcStrokePoint, CLASS_NUMBER, VARIATION_PASSWORD,
+    ColdKind, HotActionType, InputScheme, KeyboardLayout, WritingMode, YC_OK, YC_KEY_DOWN,
+    YC_KEY_UP, YcHotAction, YcStrokePoint, CLASS_NUMBER, VARIATION_PASSWORD,
 };
 
 struct App {
@@ -130,6 +130,8 @@ impl App {
             if !snap.composing.is_empty() {
                 let _ = writeln!(stdout, "组字: {}", snap.composing);
             }
+            let page = (snap.status_flags >> 8) & 0xff;
+            let total_pages = (snap.status_flags >> 16) & 0xffff;
             if !snap.candidates.is_empty() {
                 let line: Vec<String> = snap
                     .candidates
@@ -137,7 +139,17 @@ impl App {
                     .enumerate()
                     .map(|(i, c)| format!("{}.{}", i + 1, c.text))
                     .collect();
-                let _ = writeln!(stdout, "候选: {}", line.join(" "));
+                if total_pages > 1 {
+                    let _ = writeln!(
+                        stdout,
+                        "候选[页 {}/{}]: {}  (+|/down 下一页  -|/up 上一页)",
+                        page + 1,
+                        total_pages,
+                        line.join(" ")
+                    );
+                } else {
+                    let _ = writeln!(stdout, "候选: {}", line.join(" "));
+                }
             } else if !snap.composing.is_empty() {
                 let _ = writeln!(
                     stdout,
@@ -183,8 +195,11 @@ fn print_help(stdout: &mut impl Write) {
     let _ = writeln!(stdout, "命令:");
     let _ = writeln!(stdout, "  /pinyin | /zh        启用并切换 zh-pack-v1 中文拼音");
     let _ = writeln!(stdout, "  /clear              清空组字区");
-    let _ = writeln!(stdout, "  <拼音>              逐键输入 (KeyPress；新行自动清空组字)");
-    let _ = writeln!(stdout, "  /<n>                选候选 (1-based)");
+    let _ = writeln!(stdout, "  <拼音>              追加键入 (跨行连续组字；/clear 清空)");
+    let _ = writeln!(stdout, "  + / - 或 /down /up  候选下一页 / 上一页（壳层上下键同效）");
+    let _ = writeln!(stdout, "  <空格>              上屏当前页首候选");
+    let _ = writeln!(stdout, "  /bs                 Backspace 删一个拼音字母");
+    let _ = writeln!(stdout, "  /<n>                选当前页候选 (1-based)");
     let _ = writeln!(stdout, "  /layout <name>      切换布局: pinyin26|qwerty|numeric|symbol|handwriting");
     let _ = writeln!(stdout, "  /scheme <name>      切换方案: pinyin|qwerty|handwriting");
     let _ = writeln!(stdout, "  /ascii              切换 ASCII 直出模式");
@@ -533,7 +548,13 @@ fn main() {
             }
         } else if line == "/pinyin" || line == "/zh" {
             let pack = app.fixture("assets/dist/zh-pack-v1.imepack");
-            if pack.exists() {
+            if !pack.exists() {
+                let _ = writeln!(
+                    stdout,
+                    "警告: 未找到全量包 {} — 请运行 scripts/build-all.ps1 或 ime-pack build",
+                    pack.display()
+                );
+            } else {
                 let p = pack.to_string_lossy();
                 let _ = app.cold_submit_path(ColdKind::LangPackInstall, &p);
                 thread::sleep(Duration::from_millis(80));
@@ -545,7 +566,7 @@ fn main() {
                 let rc = app.submit(HotActionType::SwitchLayout, layout.raw(), 0);
                 let _ = writeln!(
                     stdout,
-                    "已切换中文拼音 zh-pack-v1 (rc={})，输入 nihao 后 /1",
+                    "已切换中文拼音 zh-pack-v1 (rc={})；输入 nihao 空格或 /1；+ / - 翻页",
                     rc
                 );
             }
@@ -555,6 +576,30 @@ fn main() {
                 let _ = writeln!(stdout, "清空组字失败: {}", rc);
             } else {
                 let _ = writeln!(stdout, "已清空组字");
+            }
+        } else if line == "/bs" || line == "/backspace" {
+            let rc = app.submit(HotActionType::Backspace, 0, 0);
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "Backspace 失败: {}", rc);
+            }
+        } else if line == "+" || line == "/down" || line == "/next" {
+            // Prefer KeyPress(VK_DOWN) so CLI exercises the same path as platform shells.
+            let rc = if line == "+" {
+                app.submit(HotActionType::PageNext, 0, 0)
+            } else {
+                app.submit(HotActionType::KeyPress, YC_KEY_DOWN, 0)
+            };
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "下一页失败: {}", rc);
+            }
+        } else if line == "-" || line == "/up" || line == "/prev" {
+            let rc = if line == "-" {
+                app.submit(HotActionType::PagePrev, 0, 0)
+            } else {
+                app.submit(HotActionType::KeyPress, YC_KEY_UP, 0)
+            };
+            if rc != YC_OK {
+                let _ = writeln!(stdout, "上一页失败: {}", rc);
             }
         } else if let Some(rest) = line.strip_prefix('/') {
             if let Ok(idx) = rest.parse::<u32>() {
@@ -570,10 +615,29 @@ fn main() {
                 let _ = writeln!(stdout, "未知命令: {}", line);
             }
         } else {
-            // REPL 每行视为独立试输入，避免组字跨行累积（如 go + nihao → gonihao）
-            let _ = app.submit(HotActionType::Init, 0, 0);
+            // Continuous composing across lines; use /clear to reset.
             for ch in line.chars() {
-                if ch.is_ascii_alphabetic() {
+                if ch == ' ' {
+                    let rc = app.submit(HotActionType::KeyPress, b' ' as u32, 0);
+                    if rc != YC_OK {
+                        let _ = writeln!(stdout, "空格上屏失败: {}", rc);
+                    }
+                } else if ch == '+' {
+                    let rc = app.submit(HotActionType::PageNext, 0, 0);
+                    if rc != YC_OK {
+                        let _ = writeln!(stdout, "下一页失败: {}", rc);
+                    }
+                } else if ch == '-' {
+                    let rc = app.submit(HotActionType::PagePrev, 0, 0);
+                    if rc != YC_OK {
+                        let _ = writeln!(stdout, "上一页失败: {}", rc);
+                    }
+                } else if ch == '\u{8}' {
+                    let rc = app.submit(HotActionType::Backspace, 0, 0);
+                    if rc != YC_OK {
+                        let _ = writeln!(stdout, "Backspace 失败: {}", rc);
+                    }
+                } else if ch.is_ascii_alphabetic() {
                     let rc = app.submit(HotActionType::KeyPress, ch as u32, 0);
                     if rc != YC_OK {
                         let _ = writeln!(stdout, "按键失败 '{}': {}", ch, rc);

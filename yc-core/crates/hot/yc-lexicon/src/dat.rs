@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use memmap2::Mmap;
 use parking_lot::Mutex;
-use yc_types::{Candidate, CandidateSource, EngineError, HotResult, MAX_CANDIDATES};
+use yc_types::{Candidate, CandidateSource, EngineError, HotResult, MAX_CANDIDATE_POOL};
 
 use crate::user_words::{merge_user_boosts, UserWordStore};
 use crate::LangLexiconHandle;
@@ -132,13 +132,13 @@ impl DatLexicon {
         collected.sort_by(|a, b| b.0.cmp(&a.0));
         collected
             .into_iter()
-            .take(MAX_CANDIDATES)
+            .take(MAX_CANDIDATE_POOL)
             .enumerate()
             .map(|(i, (_freq, text))| Candidate {
                 id: i as u32,
                 text,
                 source: CandidateSource::Lexicon,
-                score: 1.0 - (i as f32 * 0.05),
+                score: 1.0 - (i as f32 * 0.001),
             })
             .collect()
     }

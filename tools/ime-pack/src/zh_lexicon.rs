@@ -101,6 +101,7 @@ fn load_char_pinyin(path: &Path, out: &mut HashMap<char, String>) -> Result<(), 
         if !is_cjk(ch) {
             continue;
         }
+        // Prefer first reading for THUOCL word→pinyin composition.
         let py = normalize_pinyin(pinyin_part.split(',').next().unwrap_or(pinyin_part));
         if py.is_empty() {
             continue;
@@ -158,12 +159,22 @@ fn load_single_chars(path: &Path, dedup: &mut HashMap<(String, String), u32>) ->
         if !is_cjk(ch) {
             continue;
         }
-        let key = normalize_pinyin(pinyin_part.split(',').next().unwrap_or(pinyin_part));
-        if key.is_empty() {
+        // All comma-separated readings (polyphones), e.g. 行 → xing,hang.
+        let readings: Vec<String> = pinyin_part
+            .split(',')
+            .map(|p| normalize_pinyin(p))
+            .filter(|k| !k.is_empty())
+            .collect();
+        if readings.is_empty() {
             continue;
         }
-        merge_entry(dedup, key, word.to_string(), single_char_freq(ch));
-        count += 1;
+        let freq = single_char_freq(ch);
+        for (i, key) in readings.into_iter().enumerate() {
+            // Slightly prefer the first (usually primary) reading.
+            let f = freq.saturating_sub((i as u32).saturating_mul(50));
+            merge_entry(dedup, key, word.to_string(), f.max(1));
+            count += 1;
+        }
     }
     Ok(count)
 }
@@ -323,5 +334,18 @@ mod tests {
     fn normalize_strips_tones() {
         assert_eq!(normalize_pinyin("nǐ hǎo"), "nihao");
         assert_eq!(normalize_pinyin("zhōng guó"), "zhongguo");
+    }
+
+    #[test]
+    fn polyphone_readings_all_inserted() {
+        let mut dedup = HashMap::new();
+        let dir = std::env::temp_dir().join("yc_polyphone_test");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("char.txt");
+        fs::write(&path, "U+884C:xíng,háng,hàng,héng#行\n").unwrap();
+        let n = load_single_chars(&path, &mut dedup).unwrap();
+        assert!(n >= 2);
+        assert!(dedup.contains_key(&("xing".into(), "行".into())));
+        assert!(dedup.contains_key(&("hang".into(), "行".into())));
     }
 }

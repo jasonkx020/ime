@@ -125,6 +125,26 @@ impl Scheduler {
             UserAction::SwitchLang { pack_id_hash } => {
                 return self.switch_lang(sessions, handwriting, editor_id, pack_id_hash);
             }
+            UserAction::PageNext => {
+                self.factory.set_active_editor(editor_id);
+                let step = self.factory.page_next_active(editor_id)?;
+                return self.finish_step_paged(sessions, editor_id, step);
+            }
+            UserAction::PagePrev => {
+                self.factory.set_active_editor(editor_id);
+                let step = self.factory.page_prev_active(editor_id)?;
+                return self.finish_step_paged(sessions, editor_id, step);
+            }
+            UserAction::KeyPress { key_code } if yc_types::is_page_next_key(key_code) => {
+                self.factory.set_active_editor(editor_id);
+                let step = self.factory.page_next_active(editor_id)?;
+                return self.finish_step_paged(sessions, editor_id, step);
+            }
+            UserAction::KeyPress { key_code } if yc_types::is_page_prev_key(key_code) => {
+                self.factory.set_active_editor(editor_id);
+                let step = self.factory.page_prev_active(editor_id)?;
+                return self.finish_step_paged(sessions, editor_id, step);
+            }
             other => {
                 self.factory.set_active_editor(editor_id);
                 let learn_key = match &other {
@@ -333,6 +353,8 @@ impl Scheduler {
             composing: ComposingText::empty(),
             candidates: handwriting.candidates(editor_id),
             status_flags,
+            cand_page: 0,
+            cand_total: handwriting.candidates(editor_id).len() as u32,
         };
         Ok(HotOutcome { snapshot, commands })
     }
@@ -493,6 +515,8 @@ impl Scheduler {
                 Vec::new()
             },
             status_flags: 0,
+            cand_page: 0,
+            cand_total: 0,
         };
         Ok(HotOutcome {
             snapshot,
@@ -515,9 +539,7 @@ impl Scheduler {
             let prefix = step.composing.text.clone();
             let cands = std::mem::take(&mut step.candidates);
             if let Ok(ranked) = self.intel.rerank(&prefix, cands) {
-                step.candidates = ranked;
-                self.factory
-                    .update_active_candidates(step.candidates.clone());
+                self.factory.update_active_candidates(ranked);
             }
         }
 
@@ -532,19 +554,53 @@ impl Scheduler {
         }
 
         sessions.update_composing(editor_id, step.composing.clone());
+        self.emit_outcome(sessions, editor_id, step.commands)
+    }
+
+    /// Page turn: pool already ranked; only refresh snapshot page slice.
+    fn finish_step_paged(
+        &mut self,
+        sessions: &mut SessionManager,
+        editor_id: EditorId,
+        step: yc_types::EngineStep,
+    ) -> Result<HotOutcome, EngineError> {
+        sessions.update_composing(editor_id, step.composing.clone());
+        self.emit_outcome(sessions, editor_id, step.commands)
+    }
+
+    fn emit_outcome(
+        &mut self,
+        sessions: &mut SessionManager,
+        editor_id: EditorId,
+        commands: Vec<UiCommand>,
+    ) -> Result<HotOutcome, EngineError> {
+        let composing = sessions.composing(editor_id);
+        let (cand_page, cand_total) = self.factory.active_cand_meta();
+        let candidates = self.factory.active_paged_candidates();
         let seq = sessions.bump_seq(editor_id);
         let input_mode = sessions.input_mode(editor_id).unwrap_or_default();
+        let mut status_flags = 0u32;
+        // Encode page meta for shells that only read the arena header:
+        // bits 8..15 = cand_page, bits 16..31 = total_pages (saturating u16).
+        let total_pages = if cand_total == 0 {
+            0u32
+        } else {
+            (cand_total + 8) / 9
+        };
+        status_flags |= (cand_page.min(255) << 8) | (total_pages.min(0xffff) << 16);
         let snapshot = ImmSnapshot {
             editor_id,
             seq,
             input_mode,
-            composing: step.composing,
-            candidates: step.candidates,
-            status_flags: 0,
+            composing,
+            candidates,
+            status_flags,
+            cand_page,
+            cand_total,
         };
         Ok(HotOutcome {
             snapshot,
-            commands: step.commands,
+            commands,
         })
     }
 

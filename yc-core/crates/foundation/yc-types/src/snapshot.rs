@@ -65,6 +65,10 @@ pub struct ImmSnapshot {
     pub composing: ComposingText,
     pub candidates: Vec<Candidate>,
     pub status_flags: u32,
+    /// 0-based candidate page index (page size = MAX_CANDIDATES).
+    pub cand_page: u32,
+    /// Total candidates in the current pool (before paging).
+    pub cand_total: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -155,6 +155,8 @@ impl CoreState {
             composing: yc_types::ComposingText::empty(),
             candidates: Vec::new(),
             status_flags: 0,
+            cand_page: 0,
+            cand_total: 0,
         };
         let commands = vec![yc_types::UiCommand::ApplyTheme {
             skin_id: skin_id.to_string(),

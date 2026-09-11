@@ -18,6 +18,8 @@ pub enum HotActionType {
     ConfirmCloudHandwriting = 12,
     DismissCloudHandwriting = 13,
     SwitchLang = 14,
+    PageNext = 15,
+    PagePrev = 16,
 }
 
 impl HotActionType {
@@ -38,6 +40,8 @@ impl HotActionType {
             12 => Some(Self::ConfirmCloudHandwriting),
             13 => Some(Self::DismissCloudHandwriting),
             14 => Some(Self::SwitchLang),
+            15 => Some(Self::PageNext),
+            16 => Some(Self::PagePrev),
             _ => None,
         }
     }
@@ -61,6 +65,8 @@ pub enum UserAction {
     ConfirmCloudHandwriting,
     DismissCloudHandwriting,
     SwitchLang { pack_id_hash: u32 },
+    PageNext,
+    PagePrev,
 }
 
 impl UserAction {
@@ -91,6 +97,8 @@ impl UserAction {
             HotActionType::SwitchLang => Some(UserAction::SwitchLang {
                 pack_id_hash: key_code,
             }),
+            HotActionType::PageNext => Some(UserAction::PageNext),
+            HotActionType::PagePrev => Some(UserAction::PagePrev),
         }
     }
 }

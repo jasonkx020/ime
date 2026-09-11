@@ -30,14 +30,28 @@ cargo run -p yc-cli
 ## 中文拼音（zh-pack-v1，必选）
 
 ```text
-/install_lang <path/to/zh-pack-v1.imepack>
-/enable_lang zh-pack-v1
 /pinyin
 nihao
 /1
 ```
 
-期望：`/1` 上屏「你好」。无 enable 时 `/layout pinyin26` 返回 Unsupported。
+或空格上屏首候选：`nihao` 后输入空格。
+
+期望：`/1` 或空格上屏「你好」。无 enable 时 `/layout pinyin26` 返回 Unsupported。
+
+### 翻页选字（商用）
+
+```text
+/clear
+yi
++
++
+/3
+```
+
+期望：`yi` 候选超过一页；`+`/`-` 或 `/down`/`/up`（壳层上下键 VK_DOWN/VK_UP）翻页；`/<n>` 选**当前页**第 n 项并可上屏非常用字。
+
+多音字：`hang` / `xing` 均应能翻到「行」。
 
 大词库：`scripts/build-zh-lexicon.ps1`（10 万 TSV + YCLX v2 dat，已集成 `build-all.ps1`）。
 

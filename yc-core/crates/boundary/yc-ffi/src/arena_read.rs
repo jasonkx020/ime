@@ -131,6 +131,8 @@ mod tests {
                 score: 1.0,
             }],
             status_flags: 0,
+            cand_page: 0,
+            cand_total: 1,
         };
         let commands = vec![UiCommand::Commit {
             text: "你好".into(),

@@ -5,10 +5,47 @@ pub const YC_ERR_BUSY: i32 = -2;
 pub const YC_ERR_INTERNAL: i32 = -3;
 
 pub const MAX_CANDIDATES: usize = 9;
+/// Max candidates retained in the hot-path pool before paging (page size = MAX_CANDIDATES).
+pub const MAX_CANDIDATE_POOL: usize = 2000;
 pub const MAX_COMPOSING_LEN: usize = 64;
 pub const MAX_CAND_TEXT_LEN: usize = 64;
 pub const MAX_HW_POINTS: usize = 256;
 pub const MAX_HW_STROKES: usize = 16;
+
+/// Windows VK_UP / Android KEYCODE_DPAD_UP — page previous candidates.
+pub const YC_KEY_UP: u32 = 0x26;
+/// Windows VK_DOWN / also accept Android KEYCODE_DPAD_DOWN.
+pub const YC_KEY_DOWN: u32 = 0x28;
+/// Android `KeyEvent.KEYCODE_DPAD_UP`.
+pub const YC_KEY_DPAD_UP: u32 = 19;
+/// Android `KeyEvent.KEYCODE_DPAD_DOWN`.
+pub const YC_KEY_DPAD_DOWN: u32 = 20;
+
+/// True if `key_code` should flip to the next candidate page.
+pub fn is_page_next_key(key_code: u32) -> bool {
+    key_code == YC_KEY_DOWN || key_code == YC_KEY_DPAD_DOWN
+}
+
+/// True if `key_code` should flip to the previous candidate page.
+pub fn is_page_prev_key(key_code: u32) -> bool {
+    key_code == YC_KEY_UP || key_code == YC_KEY_DPAD_UP
+}
+
+
+#[cfg(test)]
+mod page_key_tests {
+    use super::*;
+
+    #[test]
+    fn arrow_keys_map_to_page() {
+        assert!(is_page_next_key(YC_KEY_DOWN));
+        assert!(is_page_next_key(YC_KEY_DPAD_DOWN));
+        assert!(is_page_prev_key(YC_KEY_UP));
+        assert!(is_page_prev_key(YC_KEY_DPAD_UP));
+        assert!(!is_page_next_key(b'a' as u32));
+        assert!(!is_page_prev_key(b' ' as u32));
+    }
+}
 
 /// Normalized stroke point for FFI (`yc_hw_push_stroke`).
 #[repr(C)]

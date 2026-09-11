@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use yc_types::{Candidate, CandidateSource, MAX_CANDIDATES};
+use yc_types::{Candidate, CandidateSource, MAX_CANDIDATE_POOL};
 
 #[derive(Debug, Default, Clone)]
 pub struct UserWordStore {
@@ -114,7 +114,7 @@ fn entry_key(pinyin: &str, word: &str) -> String {
     format!("{pinyin}\t{word}")
 }
 
-/// Merge lexicon candidates with user-word boosts; reassign ids 0..MAX_CANDIDATES.
+/// Merge lexicon candidates with user-word boosts; reassign ids 0..pool.
 pub fn merge_user_boosts(
     prefix: &str,
     mut candidates: Vec<Candidate>,
@@ -152,7 +152,7 @@ pub fn merge_user_boosts(
     });
     candidates
         .into_iter()
-        .take(MAX_CANDIDATES as usize)
+        .take(MAX_CANDIDATE_POOL)
         .enumerate()
         .map(|(i, mut c)| {
             c.id = i as u32;

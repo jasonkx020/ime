@@ -33,6 +33,14 @@
 #define YC_ACTION_CONFIRM_CLOUD_HW 12
 #define YC_ACTION_DISMISS_CLOUD_HW 13
 #define YC_ACTION_SWITCH_LANG 14      /* key_code = pack_id hash */
+#define YC_ACTION_PAGE_NEXT 15
+#define YC_ACTION_PAGE_PREV 16
+
+/* Candidate paging via KEY_PRESS key_code (shells may send these instead of PAGE_*) */
+#define YC_KEY_UP 0x26          /* Windows VK_UP — previous page */
+#define YC_KEY_DOWN 0x28        /* Windows VK_DOWN — next page */
+#define YC_KEY_DPAD_UP 19       /* Android KEYCODE_DPAD_UP */
+#define YC_KEY_DPAD_DOWN 20     /* Android KEYCODE_DPAD_DOWN */
 
 /* KeyboardLayout (key_code for SWITCH_LAYOUT) */
 #define YC_LAYOUT_PINYIN26 0

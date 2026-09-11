@@ -249,11 +249,45 @@ impl EngineFactory {
     pub fn update_active_candidates(&mut self, cands: Vec<Candidate>) {
         let _ = self.with_active(|e| {
             match e {
-                EngineSlotInner::Latin(l) => l.set_last_candidates(cands),
-                EngineSlotInner::DataDriven(d) => d.set_last_candidates(cands),
+                EngineSlotInner::Latin(l) => l.replace_cand_pool_keep_page(cands),
+                EngineSlotInner::DataDriven(d) => d.replace_cand_pool_keep_page(cands),
             }
             Ok(())
         });
+    }
+
+    pub fn page_next_active(&mut self, editor_id: EditorId) -> HotResult<EngineStep> {
+        self.with_active(|e| match e {
+            EngineSlotInner::Latin(l) => l.page_next(editor_id),
+            EngineSlotInner::DataDriven(d) => d.page_next(editor_id),
+        })
+    }
+
+    pub fn page_prev_active(&mut self, editor_id: EditorId) -> HotResult<EngineStep> {
+        self.with_active(|e| match e {
+            EngineSlotInner::Latin(l) => l.page_prev(editor_id),
+            EngineSlotInner::DataDriven(d) => d.page_prev(editor_id),
+        })
+    }
+
+    pub fn active_cand_meta(&mut self) -> (u32, u32) {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::Latin(l) => (l.cand_page(), l.cand_total()),
+                EngineSlotInner::DataDriven(d) => (d.cand_page(), d.cand_total()),
+            })
+        })
+        .unwrap_or((0, 0))
+    }
+
+    pub fn active_paged_candidates(&mut self) -> Vec<Candidate> {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::Latin(l) => l.current_paged_step().candidates,
+                EngineSlotInner::DataDriven(d) => d.current_paged_step().candidates,
+            })
+        })
+        .unwrap_or_default()
     }
 
     pub fn active_query_key(&mut self) -> String {
