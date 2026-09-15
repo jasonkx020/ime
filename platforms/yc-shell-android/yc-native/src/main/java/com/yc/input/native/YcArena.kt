@@ -11,7 +11,16 @@ data class ArenaSnapshot(
     val composing: String,
     val candidates: List<ArenaCandidate>,
     val commands: List<ArenaCommand>,
-)
+) {
+    /** status_flags bits 8..15 = cand_page */
+    val candPage: Int get() = (statusFlags ushr 8) and 0xff
+
+    /** status_flags bits 16..31 = total_pages */
+    val totalPages: Int get() = (statusFlags ushr 16) and 0xffff
+
+    /** status_flags bit0 = ascii / English mode */
+    val asciiMode: Boolean get() = (statusFlags and 0x1) != 0
+}
 
 data class ArenaCandidate(val id: Int, val text: String)
 

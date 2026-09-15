@@ -13,6 +13,9 @@ object YcNative {
     const val ACTION_KEY_PRESS = 1
     const val ACTION_BACKSPACE = 2
     const val ACTION_SELECT_CANDIDATE = 3
+    const val ACTION_TOGGLE_ASCII = 6
+    const val ACTION_PAGE_NEXT = 15
+    const val ACTION_PAGE_PREV = 16
 
     private const val ACTION_SIZE = 40
 

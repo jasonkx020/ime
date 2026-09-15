@@ -1,6 +1,14 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Common-char floor: rank 0 → BASE, lower ranks still ≫ rare.
+const FREQ_COMMON_BASE: u32 = 300_000;
+/// Unlisted CJK single chars / demoted traditional-only forms.
+const FREQ_RARE: u32 = 2_000;
+/// Keep traditional below its simplified twin by at least this gap.
+const SIMP_DELTA: u32 = 50_000;
 
 #[derive(Debug, Clone)]
 struct LexEntry {
@@ -42,7 +50,8 @@ pub fn build_zh_lexicon(opts: &BuildZhLexiconOptions) -> Result<usize, String> {
         .into_iter()
         .map(|((key, word), freq)| LexEntry { key, word, freq })
         .collect();
-    entries.sort_by(|a, b| b.freq.cmp(&a.freq).then(a.key.cmp(&b.key)));
+    apply_simplified_preference(&mut entries);
+    entries.sort_by(|a, b| b.freq.cmp(&a.freq).then(a.key.cmp(&b.key)).then(a.word.cmp(&b.word)));
 
     write_tsv(&opts.output_tsv, &entries)?;
 
@@ -64,7 +73,8 @@ pub fn build_zh_lexicon(opts: &BuildZhLexiconOptions) -> Result<usize, String> {
             .into_iter()
             .map(|((key, word), freq)| LexEntry { key, word, freq })
             .collect();
-        core.sort_by(|a, b| b.freq.cmp(&a.freq).then(a.key.cmp(&b.key)));
+        apply_simplified_preference(&mut core);
+        core.sort_by(|a, b| b.freq.cmp(&a.freq).then(a.key.cmp(&b.key)).then(a.word.cmp(&b.word)));
         write_tsv(core_path, &core)?;
     }
 
@@ -169,9 +179,14 @@ fn load_single_chars(path: &Path, dedup: &mut HashMap<(String, String), u32>) ->
             continue;
         }
         let freq = single_char_freq(ch);
+        let common = common_rank(ch).is_some();
         for (i, key) in readings.into_iter().enumerate() {
             // Slightly prefer the first (usually primary) reading.
-            let f = freq.saturating_sub((i as u32).saturating_mul(50));
+            let mut f = freq.saturating_sub((i as u32).saturating_mul(50));
+            if common {
+                // Never drop a listed common char into the rare band.
+                f = f.max(FREQ_COMMON_BASE.saturating_sub(200_000));
+            }
             merge_entry(dedup, key, word.to_string(), f.max(1));
             count += 1;
         }
@@ -286,20 +301,87 @@ fn is_cjk(ch: char) -> bool {
     matches!(ch as u32, 0x4E00..=0x9FFF)
 }
 
+fn common_rank_table() -> &'static HashMap<char, u32> {
+    static TABLE: OnceLock<HashMap<char, u32>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut m = HashMap::new();
+        let mut rank = 0u32;
+        for line in include_str!("../data/common_chars.txt").lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some(ch) = line.chars().next() {
+                m.entry(ch).or_insert(rank);
+                rank = rank.saturating_add(1);
+            }
+        }
+        m
+    })
+}
+
+fn common_rank(ch: char) -> Option<u32> {
+    common_rank_table().get(&ch).copied()
+}
+
 fn single_char_freq(ch: char) -> u32 {
-    if COMMON_SINGLE_CHARS.contains(&ch) {
-        150_000
-    } else {
-        8_000
+    match common_rank(ch) {
+        Some(rank) => FREQ_COMMON_BASE.saturating_sub(rank),
+        None => FREQ_RARE,
     }
 }
 
-const COMMON_SINGLE_CHARS: &[char] = &[
-    '的', '一', '是', '了', '我', '不', '在', '人', '有', '他', '这', '中', '大', '来', '上', '国',
-    '个', '到', '说', '们', '为', '子', '和', '你', '地', '出', '也', '时', '道', '就', '下', '得',
-    '可', '以', '生', '会', '自', '着', '去', '之', '过', '家', '学', '对', '能', '多', '然', '于',
-    '她', '它', '好', '要', '看', '没', '还', '那', '么', '什', '吗', '呢', '吧', '啊',
-];
+fn t2s_table() -> &'static HashMap<char, char> {
+    static TABLE: OnceLock<HashMap<char, char>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut m = HashMap::new();
+        for line in include_str!("../data/t2s_map.txt").lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.split('\t');
+            let Some(trad) = parts.next().and_then(|s| s.chars().next()) else {
+                continue;
+            };
+            let Some(simp) = parts.next().and_then(|s| s.chars().next()) else {
+                continue;
+            };
+            if trad != simp {
+                m.insert(trad, simp);
+            }
+        }
+        m
+    })
+}
+
+fn to_simplified(word: &str) -> String {
+    let map = t2s_table();
+    word.chars()
+        .map(|ch| map.get(&ch).copied().unwrap_or(ch))
+        .collect()
+}
+
+/// Demote traditional forms so simplified candidates sort first under the same key.
+fn apply_simplified_preference(entries: &mut [LexEntry]) {
+    let lookup: HashMap<(String, String), u32> = entries
+        .iter()
+        .map(|e| ((e.key.clone(), e.word.clone()), e.freq))
+        .collect();
+
+    for e in entries.iter_mut() {
+        let simp = to_simplified(&e.word);
+        if simp == e.word {
+            continue;
+        }
+        if let Some(&simp_freq) = lookup.get(&(e.key.clone(), simp)) {
+            e.freq = e.freq.min(simp_freq.saturating_sub(SIMP_DELTA));
+        } else {
+            // No simplified twin in lexicon: park in rare band.
+            e.freq = e.freq.min(FREQ_RARE);
+        }
+    }
+}
 
 pub fn normalize_pinyin(raw: &str) -> String {
     raw.chars()
@@ -347,5 +429,122 @@ mod tests {
         assert!(n >= 2);
         assert!(dedup.contains_key(&("xing".into(), "行".into())));
         assert!(dedup.contains_key(&("hang".into(), "行".into())));
+    }
+
+    #[test]
+    fn common_chars_outrank_rare() {
+        let de = single_char_freq('的');
+        let tao = single_char_freq('桃');
+        let rare = single_char_freq('鞉');
+        assert!(de > tao, "的 ({de}) should outrank 桃 ({tao})");
+        assert!(tao > rare, "桃 ({tao}) should outrank rare 鞉 ({rare})");
+        assert!(tao > FREQ_RARE + 10_000);
+        assert_eq!(rare, FREQ_RARE);
+    }
+
+    #[test]
+    fn fa_outranks_traditional_fa() {
+        let fa = single_char_freq('发');
+        let traditional = single_char_freq('發');
+        assert!(fa > traditional, "发 should be listed common; 發 rare or lower");
+    }
+
+    #[test]
+    fn simplified_preference_demotes_traditional() {
+        let mut entries = vec![
+            LexEntry {
+                key: "fa".into(),
+                word: "发".into(),
+                freq: 290_000,
+            },
+            LexEntry {
+                key: "fa".into(),
+                word: "發".into(),
+                freq: 290_000,
+            },
+            LexEntry {
+                key: "fa".into(),
+                word: "法".into(),
+                freq: 295_000,
+            },
+        ];
+        apply_simplified_preference(&mut entries);
+        let fa = entries.iter().find(|e| e.word == "发").unwrap().freq;
+        let trad = entries.iter().find(|e| e.word == "發").unwrap().freq;
+        assert!(
+            trad + SIMP_DELTA <= fa,
+            "發 ({trad}) must sit below 发 ({fa}) by >= {SIMP_DELTA}"
+        );
+    }
+
+    #[test]
+    fn to_simplified_maps_common_traditional() {
+        assert_eq!(to_simplified("發"), "发");
+        assert_eq!(to_simplified("體"), "体");
+        assert_eq!(to_simplified("发"), "发");
+        assert_eq!(to_simplified("討論"), "讨论");
+    }
+
+    #[test]
+    fn tao_and_fa_common_simplified_sort_first() {
+        let mut entries = vec![
+            LexEntry {
+                key: "tao".into(),
+                word: "桃".into(),
+                freq: single_char_freq('桃'),
+            },
+            LexEntry {
+                key: "tao".into(),
+                word: "陶".into(),
+                freq: single_char_freq('陶'),
+            },
+            LexEntry {
+                key: "tao".into(),
+                word: "鞉".into(),
+                freq: single_char_freq('鞉'),
+            },
+            LexEntry {
+                key: "tao".into(),
+                word: "韜".into(),
+                freq: single_char_freq('韜'),
+            },
+            LexEntry {
+                key: "fa".into(),
+                word: "发".into(),
+                freq: single_char_freq('发'),
+            },
+            LexEntry {
+                key: "fa".into(),
+                word: "發".into(),
+                freq: single_char_freq('發'),
+            },
+            LexEntry {
+                key: "fa".into(),
+                word: "法".into(),
+                freq: single_char_freq('法'),
+            },
+        ];
+        apply_simplified_preference(&mut entries);
+        entries.sort_by(|a, b| {
+            a.key
+                .cmp(&b.key)
+                .then(b.freq.cmp(&a.freq))
+                .then(a.word.cmp(&b.word))
+        });
+
+        let tao: Vec<_> = entries.iter().filter(|e| e.key == "tao").collect();
+        assert!(tao[0].freq > tao.last().unwrap().freq);
+        assert!(
+            tao.iter().take(2).all(|e| e.word != "鞉" && e.word != "韜"),
+            "rare/traditional must not lead tao: {:?}",
+            tao.iter().map(|e| &e.word).collect::<Vec<_>>()
+        );
+        assert!(tao.iter().any(|e| e.word == "桃" || e.word == "陶"));
+
+        let fa: Vec<_> = entries.iter().filter(|e| e.key == "fa").collect();
+        let fa_simp = fa.iter().find(|e| e.word == "发").unwrap().freq;
+        let fa_trad = fa.iter().find(|e| e.word == "發").unwrap().freq;
+        assert!(fa_simp > fa_trad);
+        assert_eq!(fa[0].word, "发");
     }
 }

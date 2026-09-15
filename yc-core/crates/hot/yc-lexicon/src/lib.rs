@@ -8,7 +8,10 @@ pub use dat::{
     compile_merged_tsv, compile_tsv_to_dat, normalize_romanized, DatLexicon, LexiconManager,
     LEXICON_MAGIC, LEXICON_VERSION,
 };
-pub use pinyin_match::{is_valid_prefix, key_matches_composing, split_syllables};
+pub use pinyin_match::{
+    is_complete_syllable, is_valid_pinyin_input, is_valid_prefix, key_matches_composing,
+    key_matches_jianpin, split_syllables,
+};
 pub use user_words::{merge_user_boosts, UserWordStore};
 
 use yc_types::{Candidate, EngineError, HotResult};

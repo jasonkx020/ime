@@ -11,7 +11,7 @@ use yc_types::{
     MAX_CANDIDATES,
 };
 
-use crate::pinyin_seg::{is_valid_prefix, normalize_query};
+use crate::pinyin_seg::{is_valid_pinyin_input, normalize_query};
 use crate::{invalid_session, key_code_to_char, session_invalid, InputEngine};
 
 #[derive(Debug)]
@@ -171,12 +171,23 @@ impl InputEngine for DataDrivenEngine {
         &mut self,
         editor_id: EditorId,
         key_code: u32,
-        _input_mode: &InputMode,
+        input_mode: &InputMode,
     ) -> HotResult<EngineStep> {
         if invalid_session(editor_id, self.active) {
             return session_invalid();
         }
         if key_code == b' ' as u32 {
+            if input_mode.ascii_mode {
+                let text = self.composing.clone();
+                self.composing.clear();
+                self.cand_pool.clear();
+                self.cand_page = 0;
+                return Ok(EngineStep {
+                    composing: ComposingText::empty(),
+                    candidates: Vec::new(),
+                    commands: vec![UiCommand::Commit { text }],
+                });
+            }
             let text = page_slice(&self.cand_pool, self.cand_page)
                 .first()
                 .map(|c| c.text.clone())
@@ -194,8 +205,14 @@ impl InputEngine for DataDrivenEngine {
         }
         let ch = key_code_to_char(key_code).ok_or(EngineError::Unsupported)?;
         self.composing.push(ch);
+        if input_mode.ascii_mode {
+            // English: no syllable check, no Chinese candidates
+            self.cand_pool.clear();
+            self.cand_page = 0;
+            return Ok(self.step_from_pool(self.composing.clone()));
+        }
         if self.scheme.transform == TransformKind::Table
-            && !is_valid_prefix(&self.composing, &self.scheme.syllables)
+            && !is_valid_pinyin_input(&self.composing, &self.scheme.syllables)
         {
             self.composing.pop();
             return Err(EngineError::Unsupported);

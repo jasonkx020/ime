@@ -10,11 +10,13 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     private val keyView = SamsungKeyView(context)
     private val tokens = ThemeTokens()
 
+    private val candCollapsedH = dp(52)
+    private val candExpandedH = dp(140)
+
     init {
         orientation = VERTICAL
-        val candLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(52))
+        val candLp = LayoutParams(LayoutParams.MATCH_PARENT, candCollapsedH)
         val toolLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
-        // 5 rows (number + 3 letter + bottom): ~12+5*44+4*6 ≈ 268
         val keyLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(280))
         addView(candBar, candLp)
         addView(toolbar, toolLp)
@@ -42,8 +44,19 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     fun isShifted(): Boolean = shifted
 
     override fun onSnapshot(snapshot: KeyboardSnapshot) {
+        setCandidateExpanded(snapshot.expanded)
         candBar.render(snapshot)
         keyView.render(snapshot)
+    }
+
+    override fun setCandidateExpanded(expanded: Boolean) {
+        val lp = candBar.layoutParams as LayoutParams
+        val target = if (expanded) candExpandedH else candCollapsedH
+        if (lp.height != target) {
+            lp.height = target
+            candBar.layoutParams = lp
+            requestLayout()
+        }
     }
 
     override fun applyTheme(tokens: ThemeTokens) {
@@ -59,6 +72,18 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
 
     override fun setCandidateListener(listener: (CandidateItem) -> Unit) {
         candBar.setOnCandidateListener(listener)
+    }
+
+    override fun setPageListener(listener: (Int) -> Unit) {
+        candBar.setOnPageListener(listener)
+    }
+
+    override fun setExpandListener(listener: () -> Unit) {
+        candBar.setOnExpandListener(listener)
+    }
+
+    override fun setNeedMoreListener(listener: () -> Unit) {
+        candBar.setOnNeedMoreListener(listener)
     }
 
     override fun setToolbarListener(listener: (String) -> Unit) {

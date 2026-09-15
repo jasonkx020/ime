@@ -114,6 +114,10 @@ fn entry_key(pinyin: &str, word: &str) -> String {
     format!("{pinyin}\t{word}")
 }
 
+/// Score bump so a single user selection outranks default lexicon top (~1.0).
+const USER_EXACT_BASE: f32 = 2.0;
+const USER_FREQ_WEIGHT: f32 = 0.15;
+
 /// Merge lexicon candidates with user-word boosts; reassign ids 0..pool.
 pub fn merge_user_boosts(
     prefix: &str,
@@ -124,7 +128,8 @@ pub fn merge_user_boosts(
     for c in &mut candidates {
         let f = store.freq(&prefix, &c.text);
         if f > 0 {
-            c.score += f as f32 * 0.15;
+            // 精确拼音命中：一次选择即可成为最高优先级
+            c.score += USER_EXACT_BASE + f as f32 * USER_FREQ_WEIGHT;
             if c.source == CandidateSource::Lexicon {
                 c.source = CandidateSource::User;
             }
@@ -137,11 +142,17 @@ pub fn merge_user_boosts(
         if !(py.starts_with(&prefix) || prefix == py) {
             continue;
         }
+        let exact = py == prefix;
+        let score = if exact {
+            USER_EXACT_BASE + freq as f32 * USER_FREQ_WEIGHT
+        } else {
+            0.9 + freq as f32 * USER_FREQ_WEIGHT
+        };
         candidates.push(Candidate {
             id: 0,
             text: word,
             source: CandidateSource::User,
-            score: 0.9 + freq as f32 * 0.15,
+            score,
         });
     }
     candidates.sort_by(|a, b| {
@@ -188,5 +199,54 @@ mod tests {
         let out = merge_user_boosts("ta", cands, &s);
         assert_eq!(out[0].text, "他");
         assert_eq!(out[0].source, CandidateSource::User);
+    }
+
+    #[test]
+    fn one_touch_tao_promotes_tao_char() {
+        let mut s = UserWordStore::new();
+        s.touch("tao", "陶");
+        assert_eq!(s.freq("tao", "陶"), 1);
+        let cands = vec![
+            Candidate {
+                id: 0,
+                text: "桃".into(),
+                source: CandidateSource::Lexicon,
+                score: 1.0,
+            },
+            Candidate {
+                id: 1,
+                text: "逃".into(),
+                source: CandidateSource::Lexicon,
+                score: 0.999,
+            },
+            Candidate {
+                id: 2,
+                text: "陶".into(),
+                source: CandidateSource::Lexicon,
+                score: 0.998,
+            },
+            Candidate {
+                id: 3,
+                text: "涛".into(),
+                source: CandidateSource::Lexicon,
+                score: 0.997,
+            },
+        ];
+        let out = merge_user_boosts("tao", cands, &s);
+        assert_eq!(out[0].text, "陶");
+        assert_eq!(out[0].source, CandidateSource::User);
+    }
+
+    #[test]
+    fn persist_roundtrip_keeps_habit() {
+        let path = std::env::temp_dir().join("yc_user_words_roundtrip.tsv");
+        let _ = fs::remove_file(&path);
+        {
+            let store = UserWordStore::open_or_create(&path);
+            store.lock().touch("tao", "陶");
+        }
+        let reopened = UserWordStore::open_or_create(&path);
+        assert_eq!(reopened.lock().freq("tao", "陶"), 1);
+        let _ = fs::remove_file(&path);
     }
 }

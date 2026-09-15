@@ -5,9 +5,18 @@ data class KeyboardSnapshot(
     val seq: Long,
     val composing: String,
     val candidates: List<CandidateItem>,
+    val candPage: Int = 0,
+    val totalPages: Int = 0,
+    val expanded: Boolean = false,
+    val asciiMode: Boolean = false,
 )
 
-data class CandidateItem(val id: Int, val text: String)
+data class CandidateItem(
+    val id: Int,
+    val text: String,
+    /** 引擎当前页内的页码，展开多页列表选词时用于先翻到对应页再 SELECT */
+    val page: Int = 0,
+)
 
 enum class KeyStyle { Normal, Utility, Accent }
 

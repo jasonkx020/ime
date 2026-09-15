@@ -1,6 +1,8 @@
 //! Pinyin syllable segmentation and prefix validation for table-mode schemes.
 
-pub use yc_lexicon::{is_valid_prefix, key_matches_composing, split_syllables};
+pub use yc_lexicon::{
+    is_valid_pinyin_input, is_valid_prefix, key_matches_composing, split_syllables,
+};
 
 /// Normalize composing text for lexicon lookup (lowercase, strip separators).
 pub fn normalize_query(input: &str) -> String {

@@ -34,6 +34,11 @@ class YcImeService : InputMethodService() {
     private var lastSeq: Long = -1
     private var lastComposing: String = ""
     private var lastCandidates: List<CandidateItem> = emptyList()
+    private var lastCandPage: Int = 0
+    private var lastTotalPages: Int = 0
+    private var asciiMode: Boolean = false
+    private var candExpanded: Boolean = false
+    private var expandedCandidates: MutableList<CandidateItem> = mutableListOf()
     private var panel: YcKeyboardPanel? = null
     private var coreInited = false
     private var currentLayoutId: String = "layout_pinyin26"
@@ -68,6 +73,9 @@ class YcImeService : InputMethodService() {
         panel = kb
         kb.setKeyListener { key -> onKey(key) }
         kb.setCandidateListener { cand -> onCandidate(cand) }
+        kb.setPageListener { delta -> onCandPage(delta) }
+        kb.setExpandListener { onCandExpand() }
+        kb.setNeedMoreListener { onCandNeedMore() }
         kb.setToolbarListener { item -> Log.i(TAG, "toolbar: $item") }
         reloadLayout(currentLayoutId)
         return kb
@@ -86,6 +94,10 @@ class YcImeService : InputMethodService() {
         lastSeq = -1
         lastComposing = ""
         lastCandidates = emptyList()
+        lastCandPage = 0
+        lastTotalPages = 0
+        asciiMode = false
+        clearCandScrollBuffer()
         skipEditorCommands = false
         preferEditorDelete = false
         composingRegionStart = -1
@@ -101,6 +113,8 @@ class YcImeService : InputMethodService() {
         }
         lastComposing = ""
         lastCandidates = emptyList()
+        asciiMode = false
+        clearCandScrollBuffer()
         preferEditorDelete = false
         super.onFinishInput()
     }
@@ -204,7 +218,17 @@ class YcImeService : InputMethodService() {
                 return
             }
             KeyAction.Search -> {
-                commitPinyinAsRawText()
+                if (lastComposing.isNotEmpty()) {
+                    commitPinyinAsRawText()
+                } else {
+                    performEditorImeAction()
+                }
+                return
+            }
+            KeyAction.Globe -> {
+                submit(YcNative.ACTION_TOGGLE_ASCII)
+                refreshUi()
+                Log.i(TAG, "toggle ascii -> $asciiMode")
                 return
             }
             KeyAction.Space -> {
@@ -220,9 +244,16 @@ class YcImeService : InputMethodService() {
             KeyAction.Letter -> {
                 preferEditorDelete = false
                 val code = key.keyCode ?: return
-                if (isEngineLetter(code)) {
-                    submit(YcNative.ACTION_KEY_PRESS, code)
-                    refreshUi()
+                if (isEngineLetter(code) || (asciiMode && isAsciiComposable(code))) {
+                    // 继续输入拼音时收起展开面板，避免跨查询混页
+                    if (candExpanded) collapseCandExpand()
+                    if (isEngineLetter(code)) {
+                        submit(YcNative.ACTION_KEY_PRESS, code)
+                        refreshUi()
+                    } else {
+                        // ASCII 标点：直通上屏（保留英文 composing）
+                        currentInputConnection?.commitText(code.toChar().toString(), 1)
+                    }
                 } else {
                     if (hasInputCache()) {
                         discardComposing()
@@ -238,6 +269,24 @@ class YcImeService : InputMethodService() {
             else -> Log.i(TAG, "key stub: ${key.label}")
         }
         refreshUi()
+    }
+
+    private fun isAsciiComposable(code: Int): Boolean {
+        val c = code.toChar()
+        return c == '.' || c == '/' || c == ':' || c == '-' || c == '_' || c == '@'
+    }
+
+    private fun performEditorImeAction() {
+        val ic = currentInputConnection ?: return
+        val ei = currentInputEditorInfo
+        val action = ei?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
+        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            ic.performEditorAction(action)
+        } else {
+            ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
+            ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+        }
+        Log.i(TAG, "performEditorImeAction action=$action")
     }
 
     private fun handleBackspace() {
@@ -288,22 +337,116 @@ class YcImeService : InputMethodService() {
             return
         }
         val pinyin = lastComposing
-        Log.i(TAG, "select id=${cand.id} text='$text' raw='${cand.text}' pinyin='$pinyin'")
+        Log.i(TAG, "select id=${cand.id} page=${cand.page} text='$text' pinyin='$pinyin'")
 
-        // 1) 汉字替换拼音并提交到正文
+        // 展开列表可能跨页：先翻到候选所在页，再按文本对齐页内 id，保证引擎 Commit/学习一致
+        ensureCandPage(cand.page)
+        val engineId = lastCandidates
+            .indexOfFirst { it.text == text }
+            .takeIf { it >= 0 }
+            ?: cand.id
+
         commitToEditor(text)
-        // 2) 若拼音曾作为正文泄漏，剥掉
         stripLeakedPinyin(pinyin, text)
-        // 3) 通知引擎选词 + 重置会话缓存
-        submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = cand.id)
+        submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = engineId)
         clearInputCache()
-        // 4) 之后退格只删正文（上屏已成功则不再 commitText("")）
         enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
 
         val before = currentInputConnection?.getTextBeforeCursor(32, 0)
         Log.i(
             TAG,
             "after select textBefore='$before' span=$composingRegionStart..$composingRegionEnd",
+        )
+    }
+
+    private fun onCandPage(delta: Int) {
+        if (delta > 0) {
+            if (lastTotalPages <= 1 || lastCandPage + 1 >= lastTotalPages) return
+            submit(YcNative.ACTION_PAGE_NEXT)
+        } else if (delta < 0) {
+            if (lastCandPage <= 0) return
+            submit(YcNative.ACTION_PAGE_PREV)
+        } else {
+            return
+        }
+        refreshUi()
+    }
+
+    private fun onCandExpand() {
+        if (candExpanded) {
+            collapseCandExpand()
+            pushCandSnapshot()
+            return
+        }
+        if (lastTotalPages <= 1 && lastCandidates.isEmpty()) return
+        candExpanded = true
+        if (expandedCandidates.isEmpty()) {
+            appendExpanded(lastCandidates, lastCandPage)
+        }
+        pushCandSnapshot()
+        Log.i(TAG, "cand expand pages=$lastTotalPages seeded=${expandedCandidates.size}")
+    }
+
+    private fun onCandNeedMore() {
+        if (lastTotalPages <= 1 || lastCandPage + 1 >= lastTotalPages) return
+        // 收起/展开均可跟手滑动：触底时追加下一页
+        if (expandedCandidates.isEmpty()) {
+            appendExpanded(lastCandidates, lastCandPage)
+        }
+        submit(YcNative.ACTION_PAGE_NEXT)
+        refreshUi()
+    }
+
+    private fun ensureCandPage(targetPage: Int) {
+        if (targetPage < 0) return
+        var guard = 0
+        while (lastCandPage < targetPage && guard++ < 64) {
+            submit(YcNative.ACTION_PAGE_NEXT)
+            refreshUi()
+        }
+        guard = 0
+        while (lastCandPage > targetPage && guard++ < 64) {
+            submit(YcNative.ACTION_PAGE_PREV)
+            refreshUi()
+        }
+    }
+
+    private fun appendExpanded(pageCands: List<CandidateItem>, page: Int) {
+        val existing = expandedCandidates.map { it.text }.toHashSet()
+        for (c in pageCands) {
+            if (c.text.isEmpty() || c.text in existing) continue
+            expandedCandidates.add(c.copy(page = page))
+            existing.add(c.text)
+        }
+    }
+
+    private fun collapseCandExpand() {
+        candExpanded = false
+        // 保留已加载候选，收起后仍可跟手横滑
+        panel?.setCandidateExpanded(false)
+    }
+
+    private fun clearCandScrollBuffer() {
+        candExpanded = false
+        expandedCandidates.clear()
+        panel?.setCandidateExpanded(false)
+    }
+
+    private fun displayCandidates(): List<CandidateItem> =
+        if (expandedCandidates.isNotEmpty()) expandedCandidates.toList() else lastCandidates
+
+    private fun pushCandSnapshot() {
+        panel?.onSnapshot(
+            KeyboardSnapshot(
+                editorId = editorId,
+                seq = lastSeq,
+                composing = if (preferEditorDelete) "" else lastComposing,
+                candidates = displayCandidates(),
+                candPage = lastCandPage,
+                totalPages = lastTotalPages,
+                expanded = candExpanded,
+                asciiMode = asciiMode,
+            ),
         )
     }
 
@@ -321,12 +464,13 @@ class YcImeService : InputMethodService() {
         preferEditorDelete = true
         lastComposing = ""
         lastCandidates = emptyList()
+        lastCandPage = 0
+        lastTotalPages = 0
+        clearCandScrollBuffer()
         if (!commitSucceeded && hasComposingRegion()) {
             resolveStaleComposingSpan(composingRegionEnd - composingRegionStart)
         }
-        panel?.onSnapshot(
-            KeyboardSnapshot(editorId, lastSeq, composing = "", candidates = emptyList()),
-        )
+        pushCandSnapshot()
         Log.i(TAG, "enterEditorDeleteMode commitSucceeded=$commitSucceeded")
     }
 
@@ -346,6 +490,9 @@ class YcImeService : InputMethodService() {
     private fun clearInputCache() {
         lastComposing = ""
         lastCandidates = emptyList()
+        lastCandPage = 0
+        lastTotalPages = 0
+        clearCandScrollBuffer()
         submit(YcNative.ACTION_INIT)
         skipEditorCommands = true
         try {
@@ -355,9 +502,10 @@ class YcImeService : InputMethodService() {
         }
         lastComposing = ""
         lastCandidates = emptyList()
-        panel?.onSnapshot(
-            KeyboardSnapshot(editorId, lastSeq, composing = "", candidates = emptyList()),
-        )
+        lastCandPage = 0
+        lastTotalPages = 0
+        clearCandScrollBuffer()
+        pushCandSnapshot()
         Log.i(TAG, "clearInputCache")
     }
 
@@ -439,17 +587,44 @@ class YcImeService : InputMethodService() {
         if (skipEditorCommands || preferEditorDelete) {
             lastComposing = ""
             lastCandidates = emptyList()
+            lastCandPage = 0
+            lastTotalPages = 0
+            expandedCandidates.clear()
         } else {
+            asciiMode = snap.asciiMode
+            val composingChanged = snap.composing != lastComposing
             lastComposing = snap.composing
-            lastCandidates = snap.candidates.map { CandidateItem(it.id, it.text) }
+            lastCandPage = snap.candPage
+            lastTotalPages = snap.totalPages
+            lastCandidates = snap.candidates.map {
+                CandidateItem(it.id, it.text, page = snap.candPage)
+            }
+            // 拼音变化：重置滑动缓存；同拼音翻页：追加
+            if (composingChanged) {
+                expandedCandidates.clear()
+            }
+            if (lastComposing.isNotEmpty()) {
+                appendExpanded(lastCandidates, snap.candPage)
+            } else {
+                expandedCandidates.clear()
+            }
         }
 
+        val displayCands = when {
+            skipEditorCommands || preferEditorDelete -> emptyList()
+            asciiMode -> emptyList()
+            else -> displayCandidates()
+        }
         panel?.onSnapshot(
             KeyboardSnapshot(
                 editorId = snap.editorId,
                 seq = snap.seq,
-                composing = lastComposing,
-                candidates = lastCandidates,
+                composing = if (skipEditorCommands || preferEditorDelete) "" else lastComposing,
+                candidates = displayCands,
+                candPage = lastCandPage,
+                totalPages = lastTotalPages,
+                expanded = candExpanded && displayCands.isNotEmpty(),
+                asciiMode = asciiMode,
             ),
         )
         return appliedEditorMutation

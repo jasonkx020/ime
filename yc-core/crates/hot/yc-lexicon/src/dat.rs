@@ -50,7 +50,8 @@ impl DatLexicon {
         u32::from_le_bytes(self.data[12..16].try_into().unwrap())
     }
 
-    fn key_at(&self, idx: u32) -> Option<(String, u32, u32)> {
+    /// Zero-copy key slice + payload meta (avoids String alloc on every index probe).
+    fn key_at_raw(&self, idx: u32) -> Option<(&[u8], u32, u32)> {
         let off = *self.index_offsets.get(idx as usize)? as usize;
         if off + 2 > self.data.len() {
             return None;
@@ -60,11 +61,20 @@ impl DatLexicon {
         if off + key_len + 8 > self.data.len() {
             return None;
         }
-        let key = String::from_utf8_lossy(&self.data[off..off + key_len]).into_owned();
+        let key = &self.data[off..off + key_len];
         off += key_len;
         let payload_off = u32::from_le_bytes(self.data[off..off + 4].try_into().unwrap());
         let payload_count = u32::from_le_bytes(self.data[off + 4..off + 8].try_into().unwrap());
         Some((key, payload_off, payload_count))
+    }
+
+    fn key_at(&self, idx: u32) -> Option<(String, u32, u32)> {
+        let (key, payload_off, payload_count) = self.key_at_raw(idx)?;
+        Some((
+            String::from_utf8_lossy(key).into_owned(),
+            payload_off,
+            payload_count,
+        ))
     }
 
     fn read_payload_word(&self, base: u32, idx: u32) -> Option<(u32, String)> {
@@ -96,9 +106,100 @@ impl DatLexicon {
 
     pub fn lookup_pinyin(&self, composing: &str, syllables: &[String]) -> Vec<Candidate> {
         let composing = composing.trim().to_ascii_lowercase();
-        self.lookup_with_key_filter(&composing, |key| {
-            crate::pinyin_match::key_matches_composing(key, &composing, syllables)
-        })
+        if composing.is_empty() {
+            return Vec::new();
+        }
+
+        // Full-pinyin path: DAT keys are sorted; prefix range scan.
+        let mut collected: Vec<(u32, String, bool)> = Vec::new();
+        let mut seen = std::collections::HashSet::<String>::new();
+        let key_count = self.key_count();
+        let start = lower_bound_key(self, &composing);
+        for i in start..key_count {
+            let Some((key_bytes, payload_off, payload_count)) = self.key_at_raw(i) else {
+                break;
+            };
+            if !key_bytes.starts_with(composing.as_bytes()) {
+                break;
+            }
+            let key = std::str::from_utf8(key_bytes).unwrap_or("");
+            if !crate::pinyin_match::key_matches_composing(key, &composing, syllables) {
+                continue;
+            }
+            for j in 0..payload_count {
+                if let Some((freq, word)) = self.read_payload_word(payload_off, j) {
+                    if seen.insert(word.clone()) {
+                        collected.push((freq, word, false));
+                    }
+                }
+            }
+        }
+
+        // Jianpin path: e.g. nh → nihao (key does not start with "nh").
+        // Only scan the first-letter contiguous range (sorted index), and cap hits
+        // so we never walk the whole lexicon on the UI thread.
+        if crate::pinyin_match::needs_jianpin_scan(&composing, syllables) {
+            const JIANPIN_MATCH_CAP: usize = 400;
+            let first = composing.as_bytes()[0];
+            let first_prefix = &composing[..1];
+            let jp_start = lower_bound_key(self, first_prefix);
+            let mut jp_hits = 0usize;
+            for i in jp_start..key_count {
+                let Some((key_bytes, payload_off, payload_count)) = self.key_at_raw(i) else {
+                    break;
+                };
+                if key_bytes.first().copied() != Some(first) {
+                    break;
+                }
+                if key_bytes.starts_with(composing.as_bytes()) {
+                    continue; // already considered in prefix path
+                }
+                let key = std::str::from_utf8(key_bytes).unwrap_or("");
+                if !crate::pinyin_match::key_matches_jianpin(key, &composing, syllables) {
+                    continue;
+                }
+                for j in 0..payload_count {
+                    if let Some((freq, word)) = self.read_payload_word(payload_off, j) {
+                        if seen.insert(word.clone()) {
+                            let demoted = freq.saturating_sub(freq / 10).max(1);
+                            collected.push((demoted, word, true));
+                            jp_hits += 1;
+                            if jp_hits >= JIANPIN_MATCH_CAP {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if jp_hits >= JIANPIN_MATCH_CAP {
+                    break;
+                }
+            }
+        }
+
+        collected.sort_by(|a, b| {
+            // Prefer non-jianpin-only, then freq
+            a.2.cmp(&b.2).then(b.0.cmp(&a.0)).then(a.1.cmp(&b.1))
+        });
+        let mut cands: Vec<Candidate> = collected
+            .into_iter()
+            .take(MAX_CANDIDATE_POOL)
+            .enumerate()
+            .map(|(i, (_freq, text, jianpin_only))| {
+                let base = 1.0 - (i as f32 * 0.001);
+                Candidate {
+                    id: i as u32,
+                    text,
+                    source: CandidateSource::Lexicon,
+                    score: if jianpin_only { base - 0.05 } else { base },
+                }
+            })
+            .collect();
+
+        // 完整单音节（如 tao）：默认单字优先
+        if crate::pinyin_match::is_complete_syllable(&composing, syllables) {
+            prefer_single_char_candidates(&mut cands);
+        }
+        cands
     }
 
     fn lookup_with_key_filter(
@@ -141,6 +242,25 @@ impl DatLexicon {
                 score: 1.0 - (i as f32 * 0.001),
             })
             .collect()
+    }
+}
+
+/// Prefer single-character Han candidates, then original score; reassign ids/scores.
+fn prefer_single_char_candidates(cands: &mut Vec<Candidate>) {
+    cands.sort_by(|a, b| {
+        let a1 = a.text.chars().count() == 1;
+        let b1 = b.text.chars().count() == 1;
+        b1.cmp(&a1)
+            .then(
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+            .then(a.text.cmp(&b.text))
+    });
+    for (i, c) in cands.iter_mut().enumerate() {
+        c.id = i as u32;
+        c.score = 1.0 - (i as f32 * 0.001);
     }
 }
 
@@ -187,8 +307,11 @@ fn lower_bound_key(lex: &DatLexicon, prefix: &str) -> u32 {
     let mut hi = lex.key_count();
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        let key = lex.key_at(mid).map(|(k, _, _)| k).unwrap_or_default();
-        if key.as_str() < prefix {
+        let key = lex
+            .key_at_raw(mid)
+            .map(|(k, _, _)| k)
+            .unwrap_or(b"");
+        if key < prefix.as_bytes() {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -469,6 +592,63 @@ word\tfreq\tpinyin
         assert!(pinyin.iter().any(|c| c.text == "他们"));
         assert!(!pinyin.iter().any(|c| c.text == "太阳"));
         assert!(!pinyin.iter().any(|c| c.text == "台"));
+        // 完整单音节 ta：单字「他」应排在词组「他们」之前
+        let idx_ta = pinyin.iter().position(|c| c.text == "他").unwrap();
+        let idx_tamen = pinyin.iter().position(|c| c.text == "他们").unwrap();
+        assert!(idx_ta < idx_tamen, "single char should rank before phrase");
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn full_syllable_prefers_single_char_over_high_freq_phrase() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_tao_prefer.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+桃\t8000\ttao
+套\t7000\ttao
+叨光\t90000\ttaoguang
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let dat = compile_tsv_to_dat(&tmp).unwrap();
+        let lex = DatLexicon::from_bytes(dat).unwrap();
+        let syls = vec!["tao".into(), "guang".into()];
+
+        let plain = lex.lookup("tao");
+        assert_eq!(
+            plain[0].text, "叨光",
+            "plain freq sort keeps high-freq phrase first"
+        );
+
+        let pinyin = lex.lookup_pinyin("tao", &syls);
+        assert!(pinyin[0].text.chars().count() == 1);
+        assert!(pinyin.iter().any(|c| c.text == "叨光"));
+        let first_phrase = pinyin.iter().position(|c| c.text == "叨光").unwrap();
+        assert!(first_phrase >= 2 || pinyin[..first_phrase].iter().all(|c| c.text.chars().count() == 1));
+
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn user_habit_phrase_can_outrank_single_char() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_tao_user.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+桃\t8000\ttao
+叨光\t90000\ttaoguang
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let dat = compile_tsv_to_dat(&tmp).unwrap();
+        let lex = DatLexicon::from_bytes(dat).unwrap();
+        let syls = vec!["tao".into(), "guang".into()];
+        let cands = lex.lookup_pinyin("tao", &syls);
+        assert_eq!(cands[0].text, "桃");
+
+        let mut store = UserWordStore::new();
+        store.touch("tao", "叨光");
+        store.touch("tao", "叨光");
+        let ranked = merge_user_boosts("tao", cands, &store);
+        assert_eq!(ranked[0].text, "叨光");
+
         let _ = std::fs::remove_file(tmp);
     }
 

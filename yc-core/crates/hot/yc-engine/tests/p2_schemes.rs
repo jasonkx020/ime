@@ -270,3 +270,91 @@ fn zh_pack_polyphone_hang_xing() {
     }
     assert!(found_xing, "xing should include 行");
 }
+
+#[test]
+fn zh_pack_jianpin_nh_nihao() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../assets/langpacks/zh-pack-v1");
+    if !root.exists() {
+        return;
+    }
+    let pack_path = std::env::temp_dir().join("yc_engine_zh_jp.imepack");
+    let built = build_langpack_dir(&root, &pack_path).expect("build");
+    let data = std::env::temp_dir().join("yc_engine_zh_jp_install");
+    let _ = std::fs::remove_dir_all(&data);
+    yc_pack::install_pack_to_dir(&pack_path, &data).expect("install");
+    let install_path = data.join(&built.manifest.id);
+    let scheme_bin = std::fs::read(install_path.join("scheme/pinyin_full.bin")).unwrap();
+    let desc = SchemeDesc::from_bytes(&scheme_bin).unwrap();
+    assert!(yc_engine::is_valid_pinyin_input("nh", &desc.syllables));
+    assert!(!yc_engine::is_valid_prefix("nh", &desc.syllables));
+
+    let mut engine = DataDrivenEngine::new(built.manifest.id.clone(), desc);
+    engine
+        .load_lexicon(
+            &built.manifest.id,
+            &install_path
+                .join(built.manifest.lexicon.effective_dat_path())
+                .to_string_lossy(),
+        )
+        .unwrap();
+    let editor = EditorId::from_raw(1);
+    engine.reset(editor);
+    let mut last = None;
+    for ch in "nh".chars() {
+        last = Some(
+            engine
+                .feed(editor, ch as u32, &Default::default())
+                .expect("jianpin feed"),
+        );
+    }
+    let step = last.unwrap();
+    assert!(
+        step.candidates.iter().any(|c| c.text == "你好"),
+        "nh should yield 你好, got {:?}",
+        step.candidates.iter().map(|c| &c.text).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ascii_mode_accepts_http_and_commits_raw() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../assets/langpacks/zh-pack-v1");
+    if !root.exists() {
+        return;
+    }
+    let pack_path = std::env::temp_dir().join("yc_engine_zh_ascii.imepack");
+    let built = build_langpack_dir(&root, &pack_path).expect("build");
+    let data = std::env::temp_dir().join("yc_engine_zh_ascii_install");
+    let _ = std::fs::remove_dir_all(&data);
+    yc_pack::install_pack_to_dir(&pack_path, &data).expect("install");
+    let install_path = data.join(&built.manifest.id);
+    let scheme_bin = std::fs::read(install_path.join("scheme/pinyin_full.bin")).unwrap();
+    let desc = SchemeDesc::from_bytes(&scheme_bin).unwrap();
+    let mut engine = DataDrivenEngine::new(built.manifest.id.clone(), desc);
+    engine
+        .load_lexicon(
+            &built.manifest.id,
+            &install_path
+                .join(built.manifest.lexicon.effective_dat_path())
+                .to_string_lossy(),
+        )
+        .unwrap();
+    let editor = EditorId::from_raw(1);
+    engine.reset(editor);
+    let mut mode = yc_types::InputMode::default();
+    mode.ascii_mode = true;
+    for ch in "http".chars() {
+        let step = engine.feed(editor, ch as u32, &mode).expect("ascii feed");
+        assert!(step.candidates.is_empty());
+        assert_eq!(step.composing.text.chars().last(), Some(ch));
+    }
+    let step = engine.feed(editor, b' ' as u32, &mode).unwrap();
+    assert!(
+        matches!(
+            step.commands.first(),
+            Some(yc_types::UiCommand::Commit { text }) if text == "http"
+        ),
+        "space should commit raw http"
+    );
+}

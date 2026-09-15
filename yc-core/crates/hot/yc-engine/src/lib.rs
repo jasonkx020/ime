@@ -16,7 +16,9 @@ pub use factory::EngineFactory;
 
 pub use latin::LatinPredictEngine;
 
-pub use pinyin_seg::{is_valid_prefix, key_matches_composing, normalize_query, split_syllables};
+pub use pinyin_seg::{
+    is_valid_pinyin_input, is_valid_prefix, key_matches_composing, normalize_query, split_syllables,
+};
 
 use yc_types::{EditorId, EngineError, HotResult};
 

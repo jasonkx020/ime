@@ -18,6 +18,10 @@ pub struct CoreState {
 
 impl CoreState {
     pub fn new(data_dir: PathBuf) -> Self {
+        // 持久化用户选词习惯：`{data_dir}/user_words.tsv`
+        // 选「陶」学 tao→陶 后，下次输入 tao 由 merge_user_boosts 置顶
+        let user_words =
+            yc_lexicon::UserWordStore::open_or_create(data_dir.join("user_words.tsv"));
         #[cfg(feature = "data")]
         let cold = {
             let cold = ColdPathRuntime::new(data_dir.clone());
@@ -26,7 +30,7 @@ impl CoreState {
         };
         Self {
             data_dir: data_dir.clone(),
-            services: CoreServices::new(),
+            services: CoreServices::with_user_words(user_words),
             arena: HotArena::new(),
             #[cfg(feature = "data")]
             cold,

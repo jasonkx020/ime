@@ -604,6 +604,9 @@ impl Scheduler {
             (cand_total + 8) / 9
         };
         status_flags |= (cand_page.min(255) << 8) | (total_pages.min(0xffff) << 16);
+        if input_mode.ascii_mode {
+            status_flags |= 0x1; // bit0: ascii / English mode
+        }
         let snapshot = ImmSnapshot {
             editor_id,
             seq,
