@@ -86,15 +86,14 @@ StrokeBatch
 
 | 项 | 要求 |
 |----|------|
-| 格式（M2.5 Android） | **Ismantic/Handwritten** NCNN INT8（MobileNetV2，约 4.1MB） |
-| 字表 | 3755 GB2312 一级字（`charset.json`） |
-| 输入 | 64×64 灰度（白底黑字，与 `preprocess.c` 一致） |
-| 可选扩展 | ONNX / TFLite 其它平台后续里程碑 |
-| 语言（M2.5） | 中文简体单字；连写 = 切分后多次单字推理 |
-| 分发 | App `assets/models/handwriting/` → 可选拷贝至 `filesDir`；**不进 LangPack** |
-| 体积 | ≤ 15MB（当前 ~4MB + charset） |
+| 格式（M2.5 Android） | **PaddleOCR** 官方 [ppocr-sdk](https://github.com/PaddlePaddle/PaddleOCR/tree/main/deploy/ppocr-android)（ONNX Runtime **PP-OCRv6_tiny**） |
+| 模型文件 | `det/inference.onnx` + `rec/inference.onnx` + `rec/inference.yml` |
+| 输入 | 笔迹栅格化为白底黑笔 `Bitmap`（约 360px）后 OCR |
+| 候选形态 | OCR 识别串为主（整句 + 分框/分字）；**形近字 top-30 本轮不做** |
+| 分发 | App `assets/models/ppocr/`；**不进 LangPack**；刷新：`python tools/fetch_ppocr_assets.py` |
+| 体积 | tiny det+rec 合计约 ~6MB（可换 `PP-OCRv6_small`） |
 
-模板匹配仅作 **模型缺失时的 fallback / 单元测试**。
+模板匹配仅作 **OCR 失败时的 fallback / 单元测试**。
 
 ---
 
@@ -151,17 +150,17 @@ StrokeBatch
 
 ## 9. M2.5 验收清单
 
-> 端侧识别 = Handwritten NCNN（Android）。M2.5 本地识别：UI debounce + NCNN 后台线程；`TaskId` 异步队列留给日后冷路径 NN。云端仍为 stub，但确认 UI 须闭环。
+> 端侧识别 = **PP-OCRv6_tiny（ONNX / 官方 ppocr-sdk）**（Android）。候选以 OCR 文本为主；形近字 top-30 后续另议。云端仍为 stub，但确认 UI 须闭环。
 
 - [x] 工具栏「手写」打开 HandwritingPad ≤ 100ms（原生切换）
-- [x] 单字模式抬笔 debounce（350ms）后识别；多笔不被首笔抢走
-- [x] CandBar 展示至多 9 条/页，池内 **top-30**（翻页）；`source=Handwriting`
+- [x] 单字模式抬笔 debounce（450ms）后识别
+- [x] CandBar 展示 OCR 结果（整句/分框/分字），`source=Handwriting`
 - [x] 选词 Commit 上屏并清空书写区
 - [x] 撤销/清空有效
 - [x] `SwitchScheme(handwriting)` 与工具栏入口行为一致（core）
 - [x] Session 切换 wipe 笔迹缓冲
 - [x] 密码框 `ForbiddenCloud`：禁开手写 + 工具栏灰显
-- [x] 连写切分 + 低置信云确认对话框（云结果 stub）
+- [x] 连写切分/OCR + 低置信云确认对话框（云结果 stub）
 - [x] 画布网格 + 压感线宽 +「识别中…」
 
 ### Android 手测建议

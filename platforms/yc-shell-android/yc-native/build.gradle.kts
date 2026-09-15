@@ -38,9 +38,17 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    androidResources {
+        noCompress += listOf("onnx", "yml")
+    }
 }
 
 dependencies {
     implementation("androidx.annotation:annotation:1.9.1")
     implementation(project(":yc-ui-android"))
+    // Official PaddleOCR Android SDK (ONNX Runtime, PP-OCRv6)
+    // api so OpenCV/ONNX .so propagate into the app APK.
+    api(project(":ppocr-sdk"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

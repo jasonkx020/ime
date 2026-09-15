@@ -11,7 +11,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
-import com.yc.input.handwriting.HandwrittenEngine
+import com.yc.input.handwriting.PaddleOcrEngine
 import com.yc.input.native.ArenaCommand
 import com.yc.input.native.YcNative
 import com.yc.input.ui.CandidateItem
@@ -70,7 +70,7 @@ class YcImeService : InputMethodService() {
     private var hwDebounce: Runnable? = null
     private val hwRecognizeGen = AtomicInteger(0)
     private val hwExecutor = Executors.newSingleThreadExecutor()
-    private var hwEngine: HandwrittenEngine? = null
+    private var hwEngine: PaddleOcrEngine? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -82,7 +82,7 @@ class YcImeService : InputMethodService() {
                 ensureZhPack()
             }
         }
-        hwEngine = HandwrittenEngine(applicationContext)
+        hwEngine = PaddleOcrEngine(applicationContext)
         hwExecutor.execute { hwEngine?.ensureLoaded() }
     }
 
@@ -462,7 +462,8 @@ class YcImeService : InputMethodService() {
         hwStrokes.clear()
         preferEditorDelete = false
         skipEditorCommands = false
-        hwEngine?.ensureLoaded()
+        // Preload on background; avoid runBlocking on UI thread.
+        hwExecutor.execute { hwEngine?.ensureLoaded() }
     }
 
     private fun dismissHandwriting() {
@@ -534,7 +535,7 @@ class YcImeService : InputMethodService() {
             val started = System.currentTimeMillis()
             val output =
                 if (engine != null && engine.ensureLoaded()) {
-                    engine.recognizeStrokes(strokes, continuous, topK = HandwrittenEngine.TOP_K)
+                    engine.recognizeStrokes(strokes, continuous, topK = PaddleOcrEngine.TOP_K)
                 } else {
                     null
                 }
@@ -543,7 +544,15 @@ class YcImeService : InputMethodService() {
                 if (gen != hwRecognizeGen.get()) return@post
                 panel?.setHandwritingRecognizing(false)
                 if (output == null || output.candidates.isEmpty()) {
-                    Log.w(TAG, "Handwritten miss; falling back to template Recognize ($elapsed ms)")
+                    val reason =
+                        when {
+                            engine == null -> "engine=null"
+                            !engine.isReady() && engine.hasHardFailure() -> "model-init-failed"
+                            !engine.isReady() -> "not-ready/opencv"
+                            output == null -> "recognize-null"
+                            else -> "empty-candidates"
+                        }
+                    Log.w(TAG, "PaddleOCR miss ($reason); falling back to template Recognize ($elapsed ms)")
                     submit(YcNative.ACTION_RECOGNIZE_HANDWRITING)
                     refreshUi()
                     maybeShowCloudConfirm()
@@ -555,7 +564,7 @@ class YcImeService : InputMethodService() {
                 val rc = YcNative.ycHwApplyResult(editorId, texts, scores, flags)
                 Log.i(
                     TAG,
-                    "Handwritten apply n=${texts.size} cloud=$flags rc=$rc ${elapsed}ms top=${texts.firstOrNull()}",
+                    "PaddleOCR apply n=${texts.size} cloud=$flags rc=$rc ${elapsed}ms top=${texts.firstOrNull()}",
                 )
                 if (rc != YcNative.OK) {
                     Log.w(TAG, "ycHwApplyResult failed rc=$rc; template fallback")
@@ -567,7 +576,7 @@ class YcImeService : InputMethodService() {
                 maybeShowCloudConfirm()
             }
             if (elapsed > HW_RECOGNIZE_TIMEOUT_MS) {
-                Log.w(TAG, "Handwritten slow: ${elapsed}ms")
+                Log.w(TAG, "PaddleOCR slow: ${elapsed}ms")
             }
         }
         // Soft timeout: clear "识别中…" if background stalls
@@ -619,7 +628,7 @@ class YcImeService : InputMethodService() {
         private const val TAG = "YcImeService"
         private const val HW_SINGLE_DEBOUNCE_MS = 450L
         private const val HW_CONTINUOUS_IDLE_MS = 800L
-        private const val HW_RECOGNIZE_TIMEOUT_MS = 800L
+        private const val HW_RECOGNIZE_TIMEOUT_MS = 2500L
     }
 
     private fun onCandPage(delta: Int) {

@@ -39,11 +39,6 @@ object YcNative {
             // Stub build: FFI symbols are linked into libyc_jni.so.
         }
         System.loadLibrary("yc_jni")
-        try {
-            System.loadLibrary("hccr_jni")
-        } catch (_: UnsatisfiedLinkError) {
-            // Optional: Handwritten NCNN runtime may be absent in stub builds.
-        }
     }
 
     @JvmStatic external fun ycCoreInit(dataDir: String): Int
@@ -89,7 +84,7 @@ object YcNative {
     ): Int
 
     /**
-     * Inject Handwritten NCNN candidates into the hot arena.
+     * Inject shell handwriting recognition candidates into the hot arena.
      * @param flags bit0 = needs_cloud_confirm
      */
     @JvmStatic

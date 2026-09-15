@@ -23,9 +23,17 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // PP-OCRv6 ONNX models must stay uncompressed for reliable AssetManager access.
+    androidResources {
+        noCompress += listOf("onnx", "yml")
+    }
 }
 
 dependencies {
     implementation(project(":yc-native"))
     implementation(project(":yc-ui-android"))
+    // Explicit so native .so are always packaged (nested library api can be flaky).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.21.1")
+    implementation("com.quickbirdstudios:opencv:4.5.3.0")
 }

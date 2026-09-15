@@ -1,15 +1,21 @@
-# Third-party notices (handwriting)
+# Third-party notices (handwriting / OCR)
 
-## Ismantic/Handwritten
-- Source: https://github.com/Ismantic/Handwritten
-- Models: https://huggingface.co/Ismantic/Handwritten
-- License: Apache-2.0
-- Used for: NCNN INT8 HCCR runtime + preprocess + charset
+## PaddleOCR Android SDK (`ppocr-sdk`)
+- Source: https://github.com/PaddlePaddle/PaddleOCR (`deploy/ppocr-android/ppocr-sdk`)
+- License: Apache License 2.0
+- Used for: Android ONNX Runtime OCR pipeline (PP-OCRv6)
 
-## Tencent ncnn
-- Source: https://github.com/Tencent/ncnn
-- Prebuilt: ncnn-20240820-android
-- License: BSD-3-Clause
-- Used for: on-device inference (`third_party/ncnn-android/`)
+## ONNX Runtime Android
+- `com.microsoft.onnxruntime:onnxruntime-android:1.21.1`
+- Used for: on-device inference of PP-OCRv6 ONNX models
 
-CASIA HWDB training data is NOT redistributed.
+## OpenCV Android
+- `com.quickbirdstudios:opencv:4.5.3.0`
+- Used for: image preprocess / crop in ppocr-sdk
+
+## Models
+- PP-OCRv6_tiny det/rec ONNX (`inference.onnx` + rec `inference.yml`)
+- Download: `python tools/fetch_ppocr_assets.py`
+- BOS: paddle-model-ecology PP-OCRv6_tiny_*_onnx_infer.tar
+
+paddleocr4android / Paddle-Lite / Handwritten (NCNN) have been removed from this Android shell.

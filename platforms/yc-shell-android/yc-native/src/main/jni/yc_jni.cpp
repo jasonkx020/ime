@@ -223,7 +223,7 @@ Java_com_yc_input_native_YcNative_ycHwPushStroke(
 }
 
 /**
- * Apply Handwritten NCNN results.
+ * Apply shell handwriting OCR results.
  * texts: String[] length N; scores: float[N]; flags bit0 = needs_cloud_confirm.
  */
 extern "C" JNIEXPORT jint JNICALL
