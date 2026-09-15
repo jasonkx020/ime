@@ -18,6 +18,7 @@ interface CandBar {
 interface ToolbarView {
     fun applyTheme(tokens: ThemeTokens)
     fun setOnItemClick(listener: (String) -> Unit)
+    fun setItemEnabled(item: String, enabled: Boolean) {}
 }
 
 interface UiBinder {

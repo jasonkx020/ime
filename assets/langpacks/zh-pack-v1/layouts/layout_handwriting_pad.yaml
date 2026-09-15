@@ -1,0 +1,19 @@
+layout_id: layout_handwriting_pad
+name: "手写输入"
+layout_type: handwriting_pad
+
+toolbar:
+  - { action: mode_single_char, label: "单字" }
+  - { action: mode_continuous, label: "连写" }
+  - { action: undo, label: "撤销" }
+  - { action: clear, label: "清空" }
+
+canvas:
+  id: ink_main
+  show_grid: true
+  grid_spacing_dp: 24
+
+footer:
+  - { action: dismiss_handwriting, label: "返回键盘", width: 1.0 }
+
+# No rows[]; Android uses native HandwritingPad. ReloadKeyboard layout_id=layout_handwriting.

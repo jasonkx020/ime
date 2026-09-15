@@ -110,6 +110,36 @@ impl CoreState {
         }
     }
 
+    /// Apply shell-side Handwritten recognition into the hot arena.
+    pub fn apply_hw_result(
+        &mut self,
+        editor_id: EditorId,
+        texts: &[String],
+        scores: &[f32],
+        recognized_text: Option<String>,
+        needs_cloud_confirm: bool,
+    ) -> i32 {
+        use yc_types::{YC_ERR_BUSY, YC_ERR_SESSION, YC_OK};
+
+        match self.services.scheduler.apply_handwriting_result(
+            &mut self.services.sessions,
+            &mut self.services.handwriting,
+            editor_id,
+            texts,
+            scores,
+            recognized_text,
+            needs_cloud_confirm,
+        ) {
+            Ok(outcome) => {
+                self.arena
+                    .write_snapshot(&outcome.snapshot, &outcome.commands);
+                YC_OK
+            }
+            Err(yc_types::EngineError::SessionInvalid) => YC_ERR_SESSION,
+            Err(_) => YC_ERR_BUSY,
+        }
+    }
+
     #[cfg(feature = "data")]
     pub fn sync_lang_packs(&mut self) -> i32 {
         use yc_session::EnabledLangPack;

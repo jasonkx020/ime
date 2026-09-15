@@ -16,6 +16,7 @@ class SamsungToolbar @JvmOverloads constructor(
     private var tokens = ThemeTokens()
     private var onItem: ((String) -> Unit)? = null
     private val items = listOf("设置", "翻译", "剪贴板", "语音", "表情", "手写")
+    private val disabled = mutableSetOf<String>()
     private val itemBounds = mutableListOf<Pair<String, RectF>>()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -28,18 +29,28 @@ class SamsungToolbar @JvmOverloads constructor(
         onItem = listener
     }
 
+    override fun setItemEnabled(item: String, enabled: Boolean) {
+        if (enabled) disabled.remove(item) else disabled.add(item)
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(tokens.keyboardBg)
         itemBounds.clear()
         val itemW = width / items.size.toFloat()
         paint.textSize = sp(12f)
-        paint.color = tokens.toolbarText
         paint.textAlign = Paint.Align.CENTER
         items.forEachIndexed { i, label ->
             val left = i * itemW
             val rect = RectF(left, 0f, left + itemW, height.toFloat())
             itemBounds.add(label to rect)
+            paint.color =
+                if (label in disabled) {
+                    (tokens.toolbarText and 0x00FFFFFF) or 0x66000000
+                } else {
+                    tokens.toolbarText
+                }
             val ty = rect.centerY() - (paint.descent() + paint.ascent()) / 2
             canvas.drawText(label, rect.centerX(), ty, paint)
         }
@@ -49,7 +60,9 @@ class SamsungToolbar @JvmOverloads constructor(
         if (event.action == MotionEvent.ACTION_UP) {
             for ((label, rect) in itemBounds) {
                 if (rect.contains(event.x, event.y)) {
-                    onItem?.invoke(label)
+                    if (label !in disabled) {
+                        onItem?.invoke(label)
+                    }
                     return true
                 }
             }

@@ -234,6 +234,63 @@ pub extern "C" fn yc_hw_push_stroke(
     })
 }
 
+/// Apply shell-side Handwritten (NCNN) recognition results.
+///
+/// `texts` is `count` consecutive UTF-8 C strings (each null-terminated) packed
+/// into a single buffer of `texts_bytes` length. `scores` length must be `count`.
+/// `flags` bit0 = needs_cloud_confirm.
+#[no_mangle]
+pub extern "C" fn yc_hw_apply_result(
+    editor_id: u64,
+    count: u32,
+    texts: *const u8,
+    texts_bytes: u32,
+    scores: *const f32,
+    flags: u32,
+) -> i32 {
+    ffi_guard(|| {
+        use yc_types::{YC_ERR_BUSY, YC_ERR_INTERNAL, YC_ERR_SESSION, YC_OK};
+
+        if count == 0 || count > 30 {
+            return YC_ERR_INTERNAL;
+        }
+        if texts.is_null() || scores.is_null() || texts_bytes == 0 {
+            return YC_ERR_INTERNAL;
+        }
+        let blob = unsafe { std::slice::from_raw_parts(texts, texts_bytes as usize) };
+        let score_slice = unsafe { std::slice::from_raw_parts(scores, count as usize) };
+        let mut parsed: Vec<String> = Vec::with_capacity(count as usize);
+        let mut offset = 0usize;
+        for _ in 0..count {
+            if offset >= blob.len() {
+                return YC_ERR_INTERNAL;
+            }
+            let end = blob[offset..]
+                .iter()
+                .position(|&b| b == 0)
+                .map(|i| offset + i)
+                .unwrap_or(blob.len());
+            let s = std::str::from_utf8(&blob[offset..end]).unwrap_or("");
+            parsed.push(s.to_string());
+            offset = end + 1;
+        }
+        let needs_cloud = (flags & 0x1) != 0;
+        let recognized = if parsed.len() > 1 {
+            Some(parsed.join(""))
+        } else {
+            None
+        };
+        with_core_mut(|state| {
+            let id = EditorId::from_raw(editor_id);
+            match state.apply_hw_result(id, &parsed, score_slice, recognized, needs_cloud) {
+                YC_OK => YC_OK,
+                YC_ERR_SESSION => YC_ERR_SESSION,
+                _ => YC_ERR_BUSY,
+            }
+        })
+    })
+}
+
 /// Cold-path submit (M3/M3.5; requires `data` feature).
 #[no_mangle]
 pub extern "C" fn yc_cold_submit(

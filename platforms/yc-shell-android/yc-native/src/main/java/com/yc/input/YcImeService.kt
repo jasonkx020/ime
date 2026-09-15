@@ -1,22 +1,29 @@
 package com.yc.input
 
+import android.app.AlertDialog
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
+import com.yc.input.handwriting.HandwrittenEngine
 import com.yc.input.native.ArenaCommand
 import com.yc.input.native.YcNative
 import com.yc.input.ui.CandidateItem
+import com.yc.input.ui.HandwritingPad
 import com.yc.input.ui.KeyAction
 import com.yc.input.ui.KeyDef
 import com.yc.input.ui.KeyboardSnapshot
 import com.yc.input.ui.LayoutLoader
 import com.yc.input.ui.YcKeyboardPanel
 import java.io.File
-
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 /**
  * Android IME shell.
  *
@@ -55,6 +62,15 @@ class YcImeService : InputMethodService() {
     /** 系统报告的 composing 区间 [start, end)，-1 表示无 */
     private var composingRegionStart = -1
     private var composingRegionEnd = -1
+    private var handwritingActive = false
+    private var hwSessionStrokeId = 0L
+    private var hwPasswordBlocked = false
+    private val hwStrokes = mutableListOf<HandwritingPad.StrokePayload>()
+    private val hwHandler = Handler(Looper.getMainLooper())
+    private var hwDebounce: Runnable? = null
+    private val hwRecognizeGen = AtomicInteger(0)
+    private val hwExecutor = Executors.newSingleThreadExecutor()
+    private var hwEngine: HandwrittenEngine? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -66,6 +82,8 @@ class YcImeService : InputMethodService() {
                 ensureZhPack()
             }
         }
+        hwEngine = HandwrittenEngine(applicationContext)
+        hwExecutor.execute { hwEngine?.ensureLoaded() }
     }
 
     override fun onCreateInputView(): View {
@@ -76,7 +94,12 @@ class YcImeService : InputMethodService() {
         kb.setPageListener { delta -> onCandPage(delta) }
         kb.setExpandListener { onCandExpand() }
         kb.setNeedMoreListener { onCandNeedMore() }
-        kb.setToolbarListener { item -> Log.i(TAG, "toolbar: $item") }
+        kb.setToolbarListener { item -> onToolbar(item) }
+        kb.setHandwritingStrokeListener { stroke -> onHwStroke(stroke) }
+        kb.setHandwritingRecognizeListener { onHwRecognize() }
+        kb.setHandwritingUndoListener { onHwUndo() }
+        kb.setHandwritingClearListener { onHwClear() }
+        kb.setHandwritingDismissListener { dismissHandwriting() }
         reloadLayout(currentLayoutId)
         return kb
     }
@@ -97,11 +120,18 @@ class YcImeService : InputMethodService() {
         lastCandPage = 0
         lastTotalPages = 0
         asciiMode = false
+        handwritingActive = false
+        hwSessionStrokeId = 0L
+        hwStrokes.clear()
+        cancelHwDebounce()
+        hwPasswordBlocked = isPasswordInputType(inputType)
+        panel?.setToolbarItemEnabled("手写", !hwPasswordBlocked)
         clearCandScrollBuffer()
         skipEditorCommands = false
         preferEditorDelete = false
         composingRegionStart = -1
         composingRegionEnd = -1
+        panel?.setHandwritingMode(false)
         submit(YcNative.ACTION_INIT)
         refreshUi()
     }
@@ -114,8 +144,10 @@ class YcImeService : InputMethodService() {
         lastComposing = ""
         lastCandidates = emptyList()
         asciiMode = false
+        handwritingActive = false
         clearCandScrollBuffer()
         preferEditorDelete = false
+        panel?.setHandwritingMode(false)
         super.onFinishInput()
     }
 
@@ -339,6 +371,23 @@ class YcImeService : InputMethodService() {
         val pinyin = lastComposing
         Log.i(TAG, "select id=${cand.id} page=${cand.page} text='$text' pinyin='$pinyin'")
 
+        if (handwritingActive || panel?.isHandwritingMode() == true) {
+            commitToEditor(text)
+            submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = cand.id)
+            panel?.clearHandwritingInk()
+            hwStrokes.clear()
+            hwSessionStrokeId = 0L
+            // 选词后仍留在手写板，刷新候选
+            skipEditorCommands = true
+            try {
+                refreshUi()
+            } finally {
+                skipEditorCommands = false
+            }
+            enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
+            return
+        }
+
         // 展开列表可能跨页：先翻到候选所在页，再按文本对齐页内 id，保证引擎 Commit/学习一致
         ensureCandPage(cand.page)
         val engineId = lastCandidates
@@ -357,6 +406,220 @@ class YcImeService : InputMethodService() {
             TAG,
             "after select textBefore='$before' span=$composingRegionStart..$composingRegionEnd",
         )
+    }
+
+    private fun onToolbar(item: String) {
+        when (item) {
+            "手写" -> {
+                if (hwPasswordBlocked) {
+                    Log.w(TAG, "handwriting disabled for password field")
+                    return
+                }
+                openHandwriting()
+            }
+            else -> Log.i(TAG, "toolbar: $item")
+        }
+    }
+
+    private fun isPasswordInputType(inputType: Int): Boolean {
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+        val klass = inputType and InputType.TYPE_MASK_CLASS
+        return when (variation) {
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+            -> true
+            InputType.TYPE_NUMBER_VARIATION_PASSWORD ->
+                klass == InputType.TYPE_CLASS_NUMBER
+            else -> false
+        }
+    }
+
+    private fun openHandwriting() {
+        if (editorId == 0L) return
+        clientSeq++
+        val rc = YcNative.ycHotSubmit(
+            YcNative.buildAction(
+                editorId,
+                clientSeq,
+                YcNative.ACTION_OPEN_HANDWRITING,
+                0,
+                0,
+            ),
+        )
+        if (rc != YcNative.OK) {
+            Log.w(TAG, "open handwriting blocked: ycHotSubmit rc=$rc (privacy/editor)")
+            return
+        }
+        refreshUi()
+        if (!handwritingActive) {
+            Log.w(TAG, "handwriting: ReloadKeyboard missed after OK submit, forcing pad UI")
+            panel?.setHandwritingMode(true)
+            handwritingActive = true
+        } else {
+            Log.i(TAG, "handwriting opened")
+        }
+        hwStrokes.clear()
+        preferEditorDelete = false
+        skipEditorCommands = false
+        hwEngine?.ensureLoaded()
+    }
+
+    private fun dismissHandwriting() {
+        cancelHwDebounce()
+        hwRecognizeGen.incrementAndGet()
+        panel?.setHandwritingRecognizing(false)
+        submit(YcNative.ACTION_DISMISS_HANDWRITING)
+        refreshUi()
+        panel?.setHandwritingMode(false)
+        handwritingActive = false
+        hwSessionStrokeId = 0L
+        hwStrokes.clear()
+        Log.i(TAG, "handwriting dismissed")
+    }
+
+    private fun onHwStroke(stroke: HandwritingPad.StrokePayload) {
+        if (editorId == 0L) return
+        // New ink cancels in-flight recognition.
+        hwRecognizeGen.incrementAndGet()
+        panel?.setHandwritingRecognizing(false)
+        hwSessionStrokeId++
+        val continuous = panel?.isHandwritingContinuous() == true
+        val mode =
+            if (continuous) {
+                YcNative.WRITING_CONTINUOUS
+            } else {
+                YcNative.WRITING_SINGLE_CHAR
+            }
+        val rc = YcNative.ycHwPushStroke(
+            editorId,
+            stroke.xyPressure,
+            stroke.timesMs,
+            hwSessionStrokeId,
+            stroke.canvasW,
+            stroke.canvasH,
+            mode,
+        )
+        Log.i(TAG, "hw push stroke id=$hwSessionStrokeId pts=${stroke.timesMs.size} mode=$mode rc=$rc")
+        if (rc != YcNative.OK) return
+        hwStrokes.add(stroke)
+        cancelHwDebounce()
+        val delay = if (continuous) HW_CONTINUOUS_IDLE_MS else HW_SINGLE_DEBOUNCE_MS
+        val runnable = Runnable { runHwRecognize(fromButton = false) }
+        hwDebounce = runnable
+        hwHandler.postDelayed(runnable, delay)
+    }
+
+    private fun onHwRecognize() {
+        cancelHwDebounce()
+        runHwRecognize(fromButton = true)
+    }
+
+    private fun cancelHwDebounce() {
+        hwDebounce?.let { hwHandler.removeCallbacks(it) }
+        hwDebounce = null
+    }
+
+    private fun runHwRecognize(fromButton: Boolean) {
+        if (editorId == 0L || hwStrokes.isEmpty()) return
+        val continuous = panel?.isHandwritingContinuous() == true
+        if (continuous && !fromButton && hwDebounce == null) {
+            // idle timer already consumed
+        }
+        val strokes = hwStrokes.toList()
+        val gen = hwRecognizeGen.incrementAndGet()
+        panel?.setHandwritingRecognizing(true)
+        val engine = hwEngine
+        hwExecutor.execute {
+            val started = System.currentTimeMillis()
+            val output =
+                if (engine != null && engine.ensureLoaded()) {
+                    engine.recognizeStrokes(strokes, continuous, topK = HandwrittenEngine.TOP_K)
+                } else {
+                    null
+                }
+            val elapsed = System.currentTimeMillis() - started
+            hwHandler.post {
+                if (gen != hwRecognizeGen.get()) return@post
+                panel?.setHandwritingRecognizing(false)
+                if (output == null || output.candidates.isEmpty()) {
+                    Log.w(TAG, "Handwritten miss; falling back to template Recognize ($elapsed ms)")
+                    submit(YcNative.ACTION_RECOGNIZE_HANDWRITING)
+                    refreshUi()
+                    maybeShowCloudConfirm()
+                    return@post
+                }
+                val texts = output.candidates.map { it.text }.toTypedArray()
+                val scores = FloatArray(output.candidates.size) { output.candidates[it].score }
+                val flags = if (output.needsCloudConfirm) 1 else 0
+                val rc = YcNative.ycHwApplyResult(editorId, texts, scores, flags)
+                Log.i(
+                    TAG,
+                    "Handwritten apply n=${texts.size} cloud=$flags rc=$rc ${elapsed}ms top=${texts.firstOrNull()}",
+                )
+                if (rc != YcNative.OK) {
+                    Log.w(TAG, "ycHwApplyResult failed rc=$rc; template fallback")
+                    submit(YcNative.ACTION_RECOGNIZE_HANDWRITING)
+                }
+                // 选词后 preferEditorDelete 可能仍为 true，勿吞掉手写候选
+                preferEditorDelete = false
+                refreshUi()
+                maybeShowCloudConfirm()
+            }
+            if (elapsed > HW_RECOGNIZE_TIMEOUT_MS) {
+                Log.w(TAG, "Handwritten slow: ${elapsed}ms")
+            }
+        }
+        // Soft timeout: clear "识别中…" if background stalls
+        hwHandler.postDelayed({
+            if (gen == hwRecognizeGen.get()) {
+                panel?.setHandwritingRecognizing(false)
+            }
+        }, HW_RECOGNIZE_TIMEOUT_MS)
+    }
+
+    private fun maybeShowCloudConfirm() {
+        val snap = YcNative.readArena() ?: return
+        if (!snap.pendingCloudHw) return
+        AlertDialog.Builder(this)
+            .setTitle("连写云识别")
+            .setMessage("端侧置信度较低。是否上传笔迹向量做云端识别？（当前为演示 stub）")
+            .setPositiveButton("确认") { _, _ ->
+                submit(YcNative.ACTION_CONFIRM_CLOUD_HW)
+                refreshUi()
+            }
+            .setNegativeButton("取消") { _, _ ->
+                submit(YcNative.ACTION_DISMISS_CLOUD_HW)
+                refreshUi()
+            }
+            .show()
+    }
+
+    private fun onHwUndo() {
+        cancelHwDebounce()
+        if (hwStrokes.isNotEmpty()) {
+            hwStrokes.removeAt(hwStrokes.lastIndex)
+        }
+        submit(YcNative.ACTION_UNDO_HANDWRITING)
+        refreshUi()
+    }
+
+    private fun onHwClear() {
+        cancelHwDebounce()
+        hwRecognizeGen.incrementAndGet()
+        panel?.setHandwritingRecognizing(false)
+        submit(YcNative.ACTION_CLEAR_HANDWRITING)
+        panel?.clearHandwritingInk()
+        hwSessionStrokeId = 0L
+        hwStrokes.clear()
+        refreshUi()
+    }
+
+    companion object {
+        private const val TAG = "YcImeService"
+        private const val HW_SINGLE_DEBOUNCE_MS = 450L
+        private const val HW_CONTINUOUS_IDLE_MS = 800L
+        private const val HW_RECOGNIZE_TIMEOUT_MS = 800L
     }
 
     private fun onCandPage(delta: Int) {
@@ -565,8 +828,18 @@ class YcImeService : InputMethodService() {
                         appliedEditorMutation = true
                     }
                     is ArenaCommand.ReloadKeyboard -> {
-                        if (cmd.layoutId.isNotEmpty()) {
-                            reloadLayout(cmd.layoutId)
+                        when {
+                            cmd.layout == YcNative.LAYOUT_HANDWRITING_PAD ||
+                                cmd.layoutId == "layout_handwriting" -> {
+                                panel?.setHandwritingMode(true)
+                                handwritingActive = true
+                            }
+                            else -> {
+                                panel?.setHandwritingMode(false)
+                                handwritingActive = false
+                                val id = cmd.layoutId.ifEmpty { "layout_pinyin26" }
+                                reloadLayout(id)
+                            }
                         }
                     }
                 }
@@ -585,13 +858,19 @@ class YcImeService : InputMethodService() {
         }
 
         if (skipEditorCommands || preferEditorDelete) {
-            lastComposing = ""
-            lastCandidates = emptyList()
-            lastCandPage = 0
-            lastTotalPages = 0
-            expandedCandidates.clear()
+            // 拼音上屏后 preferEditorDelete 会吞掉候选；手写态必须继续刷新 CandBar
+            val inHw = handwritingActive || panel?.isHandwritingMode() == true
+            if (!inHw) {
+                lastComposing = ""
+                lastCandidates = emptyList()
+                lastCandPage = 0
+                lastTotalPages = 0
+                expandedCandidates.clear()
+            } else {
+                applyHwCandFromSnap(snap)
+            }
         } else {
-            asciiMode = snap.asciiMode
+            asciiMode = if (handwritingActive) false else snap.asciiMode
             val composingChanged = snap.composing != lastComposing
             lastComposing = snap.composing
             lastCandPage = snap.candPage
@@ -599,35 +878,71 @@ class YcImeService : InputMethodService() {
             lastCandidates = snap.candidates.map {
                 CandidateItem(it.id, it.text, page = snap.candPage)
             }
-            // 拼音变化：重置滑动缓存；同拼音翻页：追加
-            if (composingChanged) {
+            val inHw = handwritingActive || panel?.isHandwritingMode() == true
+            if (inHw) {
+                // 手写无拼音 composing：新识别（page0）重置展开缓存，翻页则追加
+                if (snap.candPage == 0) {
+                    expandedCandidates.clear()
+                } else {
+                    appendExpanded(lastCandidates, snap.candPage)
+                }
+            } else if (composingChanged) {
                 expandedCandidates.clear()
-            }
-            if (lastComposing.isNotEmpty()) {
+                if (lastComposing.isNotEmpty()) {
+                    appendExpanded(lastCandidates, snap.candPage)
+                }
+            } else if (lastComposing.isNotEmpty()) {
                 appendExpanded(lastCandidates, snap.candPage)
             } else {
                 expandedCandidates.clear()
             }
         }
 
+        val inHw = handwritingActive || panel?.isHandwritingMode() == true
         val displayCands = when {
-            skipEditorCommands || preferEditorDelete -> emptyList()
-            asciiMode -> emptyList()
+            skipEditorCommands && !inHw -> emptyList()
+            preferEditorDelete && !inHw -> emptyList()
+            asciiMode && !inHw -> emptyList()
             else -> displayCandidates()
         }
         panel?.onSnapshot(
             KeyboardSnapshot(
                 editorId = snap.editorId,
                 seq = snap.seq,
-                composing = if (skipEditorCommands || preferEditorDelete) "" else lastComposing,
+                composing = if ((skipEditorCommands || preferEditorDelete) && !inHw) {
+                    ""
+                } else if (inHw) {
+                    ""
+                } else {
+                    lastComposing
+                },
                 candidates = displayCands,
                 candPage = lastCandPage,
                 totalPages = lastTotalPages,
                 expanded = candExpanded && displayCands.isNotEmpty(),
-                asciiMode = asciiMode,
+                asciiMode = if (inHw) false else asciiMode,
             ),
         )
         return appliedEditorMutation
+    }
+
+    private fun applyHwCandFromSnap(snap: com.yc.input.native.ArenaSnapshot) {
+        asciiMode = false
+        lastComposing = ""
+        lastCandPage = snap.candPage
+        lastTotalPages = snap.totalPages
+        lastCandidates = snap.candidates.map {
+            CandidateItem(it.id, it.text, page = snap.candPage)
+        }
+        if (snap.candPage == 0) {
+            expandedCandidates.clear()
+        } else {
+            appendExpanded(lastCandidates, snap.candPage)
+        }
+        Log.i(
+            TAG,
+            "hw cand refresh n=${lastCandidates.size} page=${snap.candPage}/${snap.totalPages} top=${lastCandidates.firstOrNull()?.text}",
+        )
     }
 
     private fun discardComposing() {
@@ -712,9 +1027,5 @@ class YcImeService : InputMethodService() {
         ic.endBatchEdit()
         val after = ic.getTextBeforeCursor(32, 0)
         Log.i(TAG, "commitToEditor '$text' before='$before' after='$after'")
-    }
-
-    private companion object {
-        const val TAG = "YcImeService"
     }
 }

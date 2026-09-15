@@ -41,7 +41,7 @@ fn open_handwriting_switches_to_handwriting_pad() {
 }
 
 #[test]
-fn recognize_produces_handwriting_candidates() {
+fn push_does_not_auto_recognize() {
     let (mut core, id) = setup_hw();
     let strokes = templates::template_strokes("你").unwrap();
     let batch = yc_types::StrokeBatch {
@@ -62,7 +62,29 @@ fn recognize_produces_handwriting_candidates() {
         )
         .unwrap();
     assert!(outcome.snapshot.candidates.is_empty());
+    assert!(core.handwriting.stroke_count(id) > 0);
+}
 
+#[test]
+fn recognize_produces_handwriting_candidates() {
+    let (mut core, id) = setup_hw();
+    let strokes = templates::template_strokes("你").unwrap();
+    let batch = yc_types::StrokeBatch {
+        editor_id: id,
+        session_stroke_id: 1,
+        strokes,
+        canvas_width: 320,
+        canvas_height: 240,
+        writing_mode: WritingMode::SingleChar,
+    };
+    core.scheduler
+        .handle(
+            &mut core.sessions,
+            &mut core.handwriting,
+            id,
+            UserAction::PushStrokeBatch { batch },
+        )
+        .unwrap();
     let outcome = core
         .scheduler
         .handle(
@@ -78,6 +100,81 @@ fn recognize_produces_handwriting_candidates() {
         CandidateSource::Handwriting
     );
     assert_eq!(outcome.snapshot.candidates[0].text, "你");
+}
+
+#[test]
+fn apply_external_handwritten_result() {
+    let (mut core, id) = setup_hw();
+    let texts = vec!["你".into(), "好".into()];
+    let scores = [0.9f32, 0.4f32];
+    let outcome = core
+        .scheduler
+        .apply_handwriting_result(
+            &mut core.sessions,
+            &mut core.handwriting,
+            id,
+            &texts,
+            &scores,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(outcome.snapshot.candidates.len(), 2);
+    assert_eq!(outcome.snapshot.candidates[0].text, "你");
+    assert_eq!(outcome.snapshot.status_flags & 0x2, 0);
+}
+
+#[test]
+fn handwriting_pool_pages_30() {
+    let (mut core, id) = setup_hw();
+    let texts: Vec<String> = (0..30).map(|i| format!("字{i}")).collect();
+    let scores: Vec<f32> = (0..30).map(|i| 1.0 - i as f32 * 0.01).collect();
+    let outcome = core
+        .scheduler
+        .apply_handwriting_result(
+            &mut core.sessions,
+            &mut core.handwriting,
+            id,
+            &texts,
+            &scores,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(outcome.snapshot.candidates.len(), 9);
+    assert_eq!(outcome.snapshot.cand_page, 0);
+    assert_eq!(outcome.snapshot.cand_total, 4); // ceil(30/9)
+    assert_eq!(outcome.snapshot.candidates[0].id, 0);
+    assert_eq!(outcome.snapshot.candidates[0].text, "字0");
+
+    let page1 = core
+        .scheduler
+        .handle(
+            &mut core.sessions,
+            &mut core.handwriting,
+            id,
+            UserAction::PageNext,
+        )
+        .unwrap();
+    assert_eq!(page1.snapshot.cand_page, 1);
+    assert_eq!(page1.snapshot.candidates.len(), 9);
+    assert_eq!(page1.snapshot.candidates[0].id, 9);
+    assert_eq!(page1.snapshot.candidates[0].text, "字9");
+
+    // Select by stable pool id (15 is on page 1)
+    let commit = core
+        .scheduler
+        .handle(
+            &mut core.sessions,
+            &mut core.handwriting,
+            id,
+            UserAction::SelectCandidate { candidate_id: 15 },
+        )
+        .unwrap();
+    assert!(matches!(
+        commit.commands.first(),
+        Some(UiCommand::Commit { text }) if text == "字15"
+    ));
 }
 
 #[test]

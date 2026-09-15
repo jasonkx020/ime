@@ -14,8 +14,21 @@ object YcNative {
     const val ACTION_BACKSPACE = 2
     const val ACTION_SELECT_CANDIDATE = 3
     const val ACTION_TOGGLE_ASCII = 6
+    const val ACTION_OPEN_HANDWRITING = 7
+    const val ACTION_DISMISS_HANDWRITING = 8
+    const val ACTION_RECOGNIZE_HANDWRITING = 9
+    const val ACTION_CLEAR_HANDWRITING = 10
+    const val ACTION_UNDO_HANDWRITING = 11
+    const val ACTION_CONFIRM_CLOUD_HW = 12
+    const val ACTION_DISMISS_CLOUD_HW = 13
     const val ACTION_PAGE_NEXT = 15
     const val ACTION_PAGE_PREV = 16
+
+    const val WRITING_SINGLE_CHAR = 0
+    const val WRITING_CONTINUOUS = 1
+
+    /** Arena ReloadKeyboard.layout = HandwritingPad */
+    const val LAYOUT_HANDWRITING_PAD = 4
 
     private const val ACTION_SIZE = 40
 
@@ -26,6 +39,11 @@ object YcNative {
             // Stub build: FFI symbols are linked into libyc_jni.so.
         }
         System.loadLibrary("yc_jni")
+        try {
+            System.loadLibrary("hccr_jni")
+        } catch (_: UnsatisfiedLinkError) {
+            // Optional: Handwritten NCNN runtime may be absent in stub builds.
+        }
     }
 
     @JvmStatic external fun ycCoreInit(dataDir: String): Int
@@ -53,6 +71,34 @@ object YcNative {
     @JvmStatic external fun ycCoreSyncLangPacks(): Int
 
     @JvmStatic external fun ycCoreInstallLangpack(packPath: String): Int
+
+    /**
+     * Push one handwriting stroke.
+     * @param xyPressure interleaved [x, y, pressure] * N (normalized 0..1)
+     * @param timesMs timestamp ms per point (length N)
+     */
+    @JvmStatic
+    external fun ycHwPushStroke(
+        editorId: Long,
+        xyPressure: FloatArray,
+        timesMs: LongArray,
+        sessionStrokeId: Long,
+        canvasW: Int,
+        canvasH: Int,
+        writingMode: Int,
+    ): Int
+
+    /**
+     * Inject Handwritten NCNN candidates into the hot arena.
+     * @param flags bit0 = needs_cloud_confirm
+     */
+    @JvmStatic
+    external fun ycHwApplyResult(
+        editorId: Long,
+        texts: Array<String>,
+        scores: FloatArray,
+        flags: Int,
+    ): Int
 
     fun coldSubmit(editorId: Long, kind: Int, payload: ByteArray): Int =
         ycColdSubmit(editorId, kind, payload)

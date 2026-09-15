@@ -7,12 +7,21 @@ use yc_types::{
 
 use crate::cloud::{CloudHwRecognizer, StubCloudRecognizer};
 use crate::recognizer::OnDeviceRecognizer;
+use crate::segment::{segment_strokes, DEFAULT_GAP_MS, DEFAULT_GAP_NORM};
+use yc_types::CandidateSource;
+
+/// Arena page size (ImmSnapshot / YC_MAX_CANDIDATES).
+pub const HW_PAGE_SIZE: usize = 9;
+/// Max Handwritten / template candidates retained in the session pool.
+pub const HW_MAX_CANDIDATES: usize = 30;
 
 #[derive(Debug, Clone)]
 struct HwSession {
     strokes: Vec<Stroke>,
     undo_stack: Vec<Vec<Stroke>>,
+    /// Full candidate pool (up to HW_MAX_CANDIDATES); ImmSnapshot shows one page.
     candidates: Vec<Candidate>,
+    cand_page: u32,
     session_stroke_id: u64,
     canvas_width: u32,
     canvas_height: u32,
@@ -26,6 +35,7 @@ impl HwSession {
             strokes: Vec::new(),
             undo_stack: Vec::new(),
             candidates: Vec::new(),
+            cand_page: 0,
             session_stroke_id: 0,
             canvas_width: 320,
             canvas_height: 240,
@@ -38,8 +48,27 @@ impl HwSession {
         self.strokes.clear();
         self.undo_stack.clear();
         self.candidates.clear();
+        self.cand_page = 0;
         self.session_stroke_id = 0;
         self.pending_cloud = false;
+    }
+
+    fn total_pages(&self) -> u32 {
+        if self.candidates.is_empty() {
+            0
+        } else {
+            ((self.candidates.len() + HW_PAGE_SIZE - 1) / HW_PAGE_SIZE) as u32
+        }
+    }
+
+    fn paged_candidates(&self) -> Vec<Candidate> {
+        let start = self.cand_page as usize * HW_PAGE_SIZE;
+        self.candidates
+            .iter()
+            .skip(start)
+            .take(HW_PAGE_SIZE)
+            .cloned()
+            .collect()
     }
 
     fn batch(&self, editor_id: EditorId) -> StrokeBatch {
@@ -123,6 +152,52 @@ impl HandwritingService {
             .ok_or(EngineError::SessionInvalid)?;
         let batch = session.batch(editor_id);
         let result = self.recognizer.infer(&batch);
+        self.store_result(editor_id, &result, privacy)?;
+        Ok(result)
+    }
+
+    /// Inject shell-side Handwritten (NCNN) candidates into the session.
+    pub fn apply_external_result(
+        &mut self,
+        editor_id: EditorId,
+        texts: &[String],
+        scores: &[f32],
+        recognized_text: Option<String>,
+        needs_cloud_confirm: bool,
+        privacy: PrivacyLevel,
+    ) -> HotResult<HandwritingResult> {
+        let _ = self
+            .sessions
+            .get(&editor_id.raw())
+            .ok_or(EngineError::SessionInvalid)?;
+        let n = texts.len().min(scores.len()).min(HW_MAX_CANDIDATES);
+        let candidates: Vec<Candidate> = (0..n)
+            .filter(|&i| !texts[i].is_empty())
+            .map(|i| Candidate {
+                id: i as u32,
+                text: texts[i].clone(),
+                source: CandidateSource::Handwriting,
+                score: scores[i],
+            })
+            .collect();
+        let confidence = candidates.first().map(|c| c.score).unwrap_or(0.0);
+        let result = HandwritingResult {
+            candidates,
+            recognized_text,
+            confidence,
+            used_cloud: false,
+            needs_cloud_confirm,
+        };
+        self.store_result(editor_id, &result, privacy)?;
+        Ok(result)
+    }
+
+    fn store_result(
+        &mut self,
+        editor_id: EditorId,
+        result: &HandwritingResult,
+        privacy: PrivacyLevel,
+    ) -> HotResult<()> {
         let session = self
             .sessions
             .get_mut(&editor_id.raw())
@@ -130,11 +205,28 @@ impl HandwritingService {
         if result.needs_cloud_confirm && privacy == PrivacyLevel::Normal {
             session.pending_cloud = true;
             session.candidates.clear();
+            session.cand_page = 0;
         } else {
             session.pending_cloud = false;
             session.candidates = result.candidates.clone();
+            session.cand_page = 0;
         }
-        Ok(result)
+        Ok(())
+    }
+
+    /// Segment current strokes for Continuous recognition (shell / tests).
+    pub fn segmented_strokes(&self, editor_id: EditorId) -> Vec<Vec<Stroke>> {
+        let Some(session) = self.sessions.get(&editor_id.raw()) else {
+            return Vec::new();
+        };
+        segment_strokes(&session.strokes, DEFAULT_GAP_MS, DEFAULT_GAP_NORM)
+    }
+
+    pub fn strokes(&self, editor_id: EditorId) -> Vec<Stroke> {
+        self.sessions
+            .get(&editor_id.raw())
+            .map(|s| s.strokes.clone())
+            .unwrap_or_default()
     }
 
     pub fn confirm_cloud(&mut self, editor_id: EditorId) -> HotResult<HandwritingResult> {
@@ -153,6 +245,7 @@ impl HandwritingService {
             .ok_or(EngineError::SessionInvalid)?;
         session.pending_cloud = false;
         session.candidates = result.candidates.clone();
+        session.cand_page = 0;
         Ok(result)
     }
 
@@ -163,6 +256,7 @@ impl HandwritingService {
             .ok_or(EngineError::SessionInvalid)?;
         session.pending_cloud = false;
         session.candidates.clear();
+        session.cand_page = 0;
         Ok(())
     }
 
@@ -173,11 +267,49 @@ impl HandwritingService {
             .unwrap_or(false)
     }
 
+    /// Current ImmSnapshot page (stable ids from the full pool).
     pub fn candidates(&self, editor_id: EditorId) -> Vec<Candidate> {
         self.sessions
             .get(&editor_id.raw())
-            .map(|s| s.candidates.clone())
+            .map(|s| s.paged_candidates())
             .unwrap_or_default()
+    }
+
+    pub fn cand_page(&self, editor_id: EditorId) -> u32 {
+        self.sessions
+            .get(&editor_id.raw())
+            .map(|s| s.cand_page)
+            .unwrap_or(0)
+    }
+
+    pub fn total_pages(&self, editor_id: EditorId) -> u32 {
+        self.sessions
+            .get(&editor_id.raw())
+            .map(|s| s.total_pages())
+            .unwrap_or(0)
+    }
+
+    pub fn page_next(&mut self, editor_id: EditorId) -> HotResult<()> {
+        let session = self
+            .sessions
+            .get_mut(&editor_id.raw())
+            .ok_or(EngineError::SessionInvalid)?;
+        let total = session.total_pages();
+        if total > 0 && session.cand_page + 1 < total {
+            session.cand_page += 1;
+        }
+        Ok(())
+    }
+
+    pub fn page_prev(&mut self, editor_id: EditorId) -> HotResult<()> {
+        let session = self
+            .sessions
+            .get_mut(&editor_id.raw())
+            .ok_or(EngineError::SessionInvalid)?;
+        if session.cand_page > 0 {
+            session.cand_page -= 1;
+        }
+        Ok(())
     }
 
     pub fn clear(&mut self, editor_id: EditorId) -> HotResult<()> {
@@ -188,6 +320,7 @@ impl HandwritingService {
         session.undo_stack.push(session.strokes.clone());
         session.strokes.clear();
         session.candidates.clear();
+        session.cand_page = 0;
         session.pending_cloud = false;
         Ok(())
     }
@@ -200,6 +333,7 @@ impl HandwritingService {
         if let Some(prev) = session.undo_stack.pop() {
             session.strokes = prev;
             session.candidates.clear();
+            session.cand_page = 0;
             session.pending_cloud = false;
         }
         Ok(())
@@ -222,6 +356,7 @@ impl HandwritingService {
             .ok_or(EngineError::Unsupported)?;
         session.strokes.clear();
         session.candidates.clear();
+        session.cand_page = 0;
         session.undo_stack.clear();
         session.session_stroke_id += 1;
         session.pending_cloud = false;

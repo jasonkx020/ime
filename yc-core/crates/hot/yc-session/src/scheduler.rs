@@ -126,21 +126,37 @@ impl Scheduler {
                 return self.switch_lang(sessions, handwriting, editor_id, pack_id_hash);
             }
             UserAction::PageNext => {
+                if input_mode.scheme == InputScheme::Handwriting {
+                    handwriting.page_next(editor_id)?;
+                    return self.hw_outcome(sessions, handwriting, editor_id, Vec::new());
+                }
                 self.factory.set_active_editor(editor_id);
                 let step = self.factory.page_next_active(editor_id)?;
                 return self.finish_step_paged(sessions, editor_id, step);
             }
             UserAction::PagePrev => {
+                if input_mode.scheme == InputScheme::Handwriting {
+                    handwriting.page_prev(editor_id)?;
+                    return self.hw_outcome(sessions, handwriting, editor_id, Vec::new());
+                }
                 self.factory.set_active_editor(editor_id);
                 let step = self.factory.page_prev_active(editor_id)?;
                 return self.finish_step_paged(sessions, editor_id, step);
             }
             UserAction::KeyPress { key_code } if yc_types::is_page_next_key(key_code) => {
+                if input_mode.scheme == InputScheme::Handwriting {
+                    handwriting.page_next(editor_id)?;
+                    return self.hw_outcome(sessions, handwriting, editor_id, Vec::new());
+                }
                 self.factory.set_active_editor(editor_id);
                 let step = self.factory.page_next_active(editor_id)?;
                 return self.finish_step_paged(sessions, editor_id, step);
             }
             UserAction::KeyPress { key_code } if yc_types::is_page_prev_key(key_code) => {
+                if input_mode.scheme == InputScheme::Handwriting {
+                    handwriting.page_prev(editor_id)?;
+                    return self.hw_outcome(sessions, handwriting, editor_id, Vec::new());
+                }
                 self.factory.set_active_editor(editor_id);
                 let step = self.factory.page_prev_active(editor_id)?;
                 return self.finish_step_paged(sessions, editor_id, step);
@@ -245,6 +261,7 @@ impl Scheduler {
         editor_id: EditorId,
         batch: yc_types::StrokeBatch,
     ) -> Result<HotOutcome, EngineError> {
+        // Shell runs Handwritten (NCNN) after debounce; only buffer strokes here.
         handwriting.push_batch(batch)?;
         self.hw_outcome(sessions, handwriting, editor_id, Vec::new())
     }
@@ -259,6 +276,34 @@ impl Scheduler {
             .privacy_of(editor_id)
             .unwrap_or(yc_types::PrivacyLevel::Normal);
         let _result = handwriting.recognize(editor_id, privacy)?;
+        self.hw_outcome(sessions, handwriting, editor_id, Vec::new())
+    }
+
+    /// Inject Handwritten NCNN (or other shell) candidates into the ImmSnapshot.
+    pub fn apply_handwriting_result(
+        &mut self,
+        sessions: &mut SessionManager,
+        handwriting: &mut HandwritingService,
+        editor_id: EditorId,
+        texts: &[String],
+        scores: &[f32],
+        recognized_text: Option<String>,
+        needs_cloud_confirm: bool,
+    ) -> Result<HotOutcome, EngineError> {
+        if !sessions.validate(editor_id) {
+            return Err(EngineError::SessionInvalid);
+        }
+        let privacy = sessions
+            .privacy_of(editor_id)
+            .unwrap_or(yc_types::PrivacyLevel::Normal);
+        handwriting.apply_external_result(
+            editor_id,
+            texts,
+            scores,
+            recognized_text,
+            needs_cloud_confirm,
+            privacy,
+        )?;
         self.hw_outcome(sessions, handwriting, editor_id, Vec::new())
     }
 
@@ -357,11 +402,14 @@ impl Scheduler {
     ) -> Result<HotOutcome, EngineError> {
         let seq = sessions.bump_seq(editor_id);
         let input_mode = sessions.input_mode(editor_id).unwrap_or_default();
-        let status_flags = if handwriting.pending_cloud(editor_id) {
-            1
-        } else {
-            0
-        };
+        let mut status_flags = 0u32;
+        if handwriting.pending_cloud(editor_id) {
+            status_flags |= 0x2; // bit1: pending cloud handwriting confirm
+        }
+        let cand_page = handwriting.cand_page(editor_id);
+        let total_pages = handwriting.total_pages(editor_id);
+        // bits 8..15 = cand_page, bits 16..31 = total_pages (same as pinyin)
+        status_flags |= (cand_page.min(255) << 8) | (total_pages.min(0xffff) << 16);
         let snapshot = ImmSnapshot {
             editor_id,
             seq,
@@ -369,8 +417,8 @@ impl Scheduler {
             composing: ComposingText::empty(),
             candidates: handwriting.candidates(editor_id),
             status_flags,
-            cand_page: 0,
-            cand_total: handwriting.candidates(editor_id).len() as u32,
+            cand_page,
+            cand_total: total_pages,
         };
         Ok(HotOutcome { snapshot, commands })
     }

@@ -22,6 +22,15 @@ fn password_field_forces_forbidden_cloud() {
 }
 
 #[test]
+fn web_edit_text_is_not_forbidden_cloud() {
+    // TYPE_TEXT_VARIATION_WEB_EDIT_TEXT (0xa0) must not be treated as password.
+    let mut sm = SessionManager::new();
+    let id = sm.create(fp(1, 0xa0));
+    assert_eq!(sm.privacy_of(id), Some(PrivacyLevel::Normal));
+    assert!(!sm.input_mode(id).unwrap().ascii_mode);
+}
+
+#[test]
 fn number_field_forces_numeric_layout() {
     let mut sm = SessionManager::new();
     let id = sm.create(fp(1, CLASS_NUMBER));

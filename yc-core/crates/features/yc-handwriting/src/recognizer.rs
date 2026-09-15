@@ -31,7 +31,7 @@ impl OnDeviceRecognizer {
         let top_confidence = scored.first().map(|(s, _)| *s).unwrap_or(0.0);
         let candidates: Vec<Candidate> = scored
             .iter()
-            .take(5)
+            .take(30)
             .enumerate()
             .map(|(i, (score, tpl))| Candidate {
                 id: i as u32,

@@ -144,6 +144,10 @@ int32_t yc_hw_push_stroke(uint64_t editor_id, const YcStrokePoint *points,
                           uint32_t canvas_width, uint32_t canvas_height,
                           uint32_t writing_mode);
 
+/** Apply shell Handwritten results. texts: count NUL-terminated UTF-8 strings. flags bit0=needs_cloud */
+int32_t yc_hw_apply_result(uint64_t editor_id, uint32_t count, const uint8_t *texts,
+                           uint32_t texts_bytes, const float *scores, uint32_t flags);
+
 typedef void (*YcColdCallback)(int32_t task_id, uint64_t editor_id,
                                const uint8_t *payload, size_t len, int32_t err);
 
