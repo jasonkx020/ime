@@ -3,15 +3,15 @@ use std::path::PathBuf;
 #[cfg(feature = "data")]
 use yc_data::ColdPathRuntime;
 use yc_session::CoreServices;
-use yc_types::{EditorFingerprint, EditorId, SessionStopReason, UserAction, YC_OK};
+use yc_types::{EditorFingerprint, EditorId, SessionStopReason, UserAction};
 
 use crate::arena::HotArena;
 
 pub struct CoreState {
+    #[allow(dead_code)] // retained for cold-path / diagnostics; read when feature = "data"
     pub data_dir: PathBuf,
     pub services: CoreServices,
     pub arena: HotArena,
-    pub initialized: bool,
     #[cfg(feature = "data")]
     pub cold: ColdPathRuntime,
 }
@@ -28,7 +28,6 @@ impl CoreState {
             data_dir: data_dir.clone(),
             services: CoreServices::new(),
             arena: HotArena::new(),
-            initialized: true,
             #[cfg(feature = "data")]
             cold,
         }
@@ -110,7 +109,12 @@ impl CoreState {
     #[cfg(feature = "data")]
     pub fn sync_lang_packs(&mut self) -> i32 {
         use yc_session::EnabledLangPack;
-        use yc_types::LangPackEngineSpec;
+        use yc_types::{LangPackEngineSpec, YC_OK};
+
+        {
+            let mut host = self.cold.plugin();
+            host.reload_from_disk();
+        }
 
         let host = self.cold.plugin();
         let enabled_slots: Vec<_> = host.list_enabled_slots().into_iter().cloned().collect();
@@ -137,12 +141,35 @@ impl CoreState {
         YC_OK
     }
 
+    /// Sync install + enable an `.imepack`, then register into the hot scheduler.
     #[cfg(feature = "data")]
+    pub fn install_and_enable_langpack(&mut self, pack_path: &str) -> i32 {
+        use yc_types::{YC_ERR_INTERNAL, YC_OK};
+
+        {
+            let mut host = self.cold.plugin();
+            let manifest = match host.install_lang_pack(pack_path) {
+                Ok(m) => m,
+                Err(_) => return YC_ERR_INTERNAL,
+            };
+            if host.enable(&manifest.id).is_err() {
+                return YC_ERR_INTERNAL;
+            }
+        }
+        let _ = self.sync_lang_packs();
+        YC_OK
+    }
+
+    /// Hook for cold LangPackDisable → scheduler; wire when cold completion notifies core.
+    #[cfg(feature = "data")]
+    #[allow(dead_code)]
     pub fn on_lang_pack_disabled(&mut self, pack_id: &str) {
         self.services.scheduler.on_pack_disabled(pack_id);
     }
 
+    /// Hook for cold Skin → arena ApplyTheme; wire when cold completion notifies core.
     #[cfg(feature = "data")]
+    #[allow(dead_code)]
     pub fn apply_theme_from_cold(&mut self, editor_id: EditorId, skin_id: &str) {
         let snapshot = yc_types::ImmSnapshot {
             editor_id,

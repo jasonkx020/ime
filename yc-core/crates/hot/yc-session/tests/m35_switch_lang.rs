@@ -5,7 +5,7 @@ use yc_handwriting::HandwritingService;
 use yc_pack::build_langpack_dir;
 use yc_plugin::PluginHost;
 use yc_session::{EnabledLangPack, Scheduler};
-use yc_types::{EditorId, UserAction};
+use yc_types::UserAction;
 
 fn hash_pack(id: &str) -> u32 {
     id.bytes()

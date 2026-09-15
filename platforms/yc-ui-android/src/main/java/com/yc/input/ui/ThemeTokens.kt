@@ -6,7 +6,7 @@ data class ThemeTokens(
     val keyNormal: Int = 0xFFFFFFFF.toInt(),
     val keyUtility: Int = 0xFFDDE0E4.toInt(),
     val keyAccent: Int = 0xFF1A73E8.toInt(),
-    val keyPressed: Int = 0xFFC8CCD2.toInt(),
+    val keyPressed: Int = 0xFF9AA0A6.toInt(),
     val candText: Int = 0xFF202124.toInt(),
     val candSelectedBg: Int = 0xFFFFFFFF.toInt(),
     val candSelectedBorder: Int = 0xFF1A73E8.toInt(),

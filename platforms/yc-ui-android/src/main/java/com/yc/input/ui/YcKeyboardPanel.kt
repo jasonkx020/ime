@@ -14,16 +14,32 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         orientation = VERTICAL
         val candLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(52))
         val toolLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
-        val keyLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(220))
+        // 5 rows (number + 3 letter + bottom): ~12+5*44+4*6 ≈ 268
+        val keyLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(280))
         addView(candBar, candLp)
         addView(toolbar, toolLp)
         addView(keyView, keyLp)
         applyTheme(tokens)
     }
 
+    private var shifted = false
+
     fun setLayoutRows(rows: List<List<KeyDef>>) {
+        shifted = false
         keyView.setLayoutRows(rows)
     }
+
+    fun setShifted(shifted: Boolean) {
+        this.shifted = shifted
+        keyView.setLayoutRows(Layout26Pinyin.rows(shifted))
+    }
+
+    fun toggleShift(): Boolean {
+        setShifted(!shifted)
+        return shifted
+    }
+
+    fun isShifted(): Boolean = shifted
 
     override fun onSnapshot(snapshot: KeyboardSnapshot) {
         candBar.render(snapshot)

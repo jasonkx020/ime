@@ -33,10 +33,12 @@ impl HotArena {
         ARENA_SIZE
     }
 
+    #[allow(dead_code)] // used by tests / future yc_hot_latest_seq arena path
     pub fn latest_seq(&self) -> u64 {
         self.latest_seq
     }
 
+    #[allow(dead_code)] // used by arena_read tests
     pub fn read_latest_buffer(&self) -> &[u8] {
         &self.buffers[self.write_index]
     }

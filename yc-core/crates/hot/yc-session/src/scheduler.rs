@@ -156,12 +156,28 @@ impl Scheduler {
                 };
                 let step = match other {
                     UserAction::Init => {
+                        // Android/shell often never calls SwitchLayout; activate default
+                        // zh pinyin so subsequent KeyPress can feed_active.
+                        let mut init_commands = Vec::new();
+                        if !self.factory.has_active_pack() && !self.enabled_packs.is_empty() {
+                            let mut mode = sessions.input_mode(editor_id).unwrap_or_default();
+                            if self
+                                .activate_zh_pinyin(&mut mode, "layout_pinyin26")
+                                .is_ok()
+                            {
+                                sessions.set_input_mode(editor_id, mode.clone());
+                                init_commands.push(UiCommand::ReloadKeyboard {
+                                    layout: KeyboardLayout::Pinyin26,
+                                    layout_id: mode.layout_id.clone(),
+                                });
+                            }
+                        }
                         self.factory.reset_active(editor_id);
                         sessions.update_composing(editor_id, ComposingText::empty());
                         yc_types::EngineStep {
                             composing: ComposingText::empty(),
                             candidates: Vec::new(),
-                            commands: Vec::new(),
+                            commands: init_commands,
                         }
                     }
                     UserAction::KeyPress { key_code } => {

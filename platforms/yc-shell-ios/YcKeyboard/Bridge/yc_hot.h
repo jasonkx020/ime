@@ -152,6 +152,7 @@ int32_t yc_cold_submit(uint64_t editor_id, uint32_t kind,
 int32_t yc_cold_cancel(int32_t task_id);
 int32_t yc_cold_set_callback(YcColdCallback callback);
 int32_t yc_core_sync_lang_packs(void);
+int32_t yc_core_install_langpack(const char *pack_path);
 
 #ifdef __cplusplus
 }

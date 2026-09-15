@@ -23,6 +23,8 @@ enum EngineSlotInner {
 
 #[derive(Debug)]
 struct RegisteredPack {
+    /// Pack manifest default scheme (metadata; active scheme tracked separately).
+    #[allow(dead_code)]
     default_scheme_id: String,
     active_scheme_id: String,
     engines: HashMap<String, EngineSlotInner>,

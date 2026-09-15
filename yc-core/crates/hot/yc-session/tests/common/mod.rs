@@ -58,6 +58,8 @@ pub fn activate_pinyin26(
     );
 }
 
+// Shared across integration test binaries; unused in some (e.g. m2_switch).
+#[allow(dead_code)]
 pub fn type_keys(
     scheduler: &mut Scheduler,
     sessions: &mut yc_session::SessionManager,

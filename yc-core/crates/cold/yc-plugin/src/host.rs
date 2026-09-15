@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use yc_pack::{install_pack_to_dir, LangPackManifest};
+use yc_pack::{install_pack_to_dir, manifest_from_bytes, LangPackManifest, MANIFEST_FB};
 use yc_types::{EngineError, HotResult, LangPackInfo, LangPackState};
 
 use crate::catalog::{
@@ -29,11 +30,40 @@ pub struct PluginHost {
 impl PluginHost {
     pub fn new(data_dir: PathBuf) -> Self {
         let remote_catalog = load_catalog_cache(&data_dir);
-        Self {
+        let mut host = Self {
             data_dir,
             installed: HashMap::new(),
             registry: LangPackRegistry::new(),
             remote_catalog,
+        };
+        host.reload_from_disk();
+        host
+    }
+
+    /// Scan `{data_dir}/langpacks/*/manifest.fb` and re-enable packs after process restart.
+    pub fn reload_from_disk(&mut self) {
+        let root = self.data_dir.join("langpacks");
+        let Ok(entries) = fs::read_dir(&root) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let mf_path = path.join(MANIFEST_FB);
+            let Ok(bytes) = fs::read(&mf_path) else {
+                continue;
+            };
+            let Ok(manifest) = manifest_from_bytes(&bytes) else {
+                continue;
+            };
+            let lexicon = path.join(manifest.lexicon.effective_dat_path());
+            if !lexicon.is_file() {
+                continue;
+            }
+            let _ = self.register_installed(&manifest);
+            let _ = self.enable(&manifest.id);
         }
     }
 

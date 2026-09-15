@@ -52,6 +52,3 @@ pub fn install_optional_handlers(runtime: &yc_data::ColdPathRuntime) {
 
 #[cfg(all(feature = "data", not(feature = "ai")))]
 pub fn install_optional_handlers(_runtime: &yc_data::ColdPathRuntime) {}
-
-#[cfg(not(feature = "data"))]
-pub fn install_optional_handlers() {}

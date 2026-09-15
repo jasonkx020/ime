@@ -10,9 +10,14 @@ target_include_directories(yc_jni PRIVATE ${YC_HOT_INCLUDE_DIR})
 target_link_libraries(yc_jni log)
 
 if (EXISTS ${YC_FFI_PREBUILT})
+    # On Windows hosts, linking an IMPORTED .so by absolute path embeds that
+    # path into DT_NEEDED; IMPORTED_NO_SONAME forces just "libyc_ffi.so".
     message(STATUS "Linking prebuilt libyc_ffi.so for ${ANDROID_ABI}")
     add_library(yc_ffi SHARED IMPORTED)
-    set_target_properties(yc_ffi PROPERTIES IMPORTED_LOCATION ${YC_FFI_PREBUILT})
+    set_target_properties(yc_ffi PROPERTIES
+        IMPORTED_LOCATION ${YC_FFI_PREBUILT}
+        IMPORTED_NO_SONAME TRUE
+    )
     target_link_libraries(yc_jni yc_ffi)
 else ()
     message(WARNING "libyc_ffi.so not found for ${ANDROID_ABI}; using stub FFI symbols")

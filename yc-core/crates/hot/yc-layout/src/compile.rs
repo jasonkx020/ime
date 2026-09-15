@@ -10,7 +10,15 @@ pub fn compile_layout_yaml(path: &Path) -> std::io::Result<Vec<u8>> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
     let mut keys = Vec::new();
-    for row in &layout.rows {
+    for (row_idx, row) in layout.rows.iter().enumerate() {
+        if row_idx > 0 {
+            keys.push(KeySlot {
+                label: pad_str("", MAX_KEY_LABEL),
+                output: pad_str("", MAX_KEY_OUTPUT),
+                action: action_to_byte("row_break"),
+                width: 0.0,
+            });
+        }
         for key in row {
             let label = key.label.clone().unwrap_or_default();
             let output = key.output.clone().unwrap_or_default();
@@ -56,6 +64,8 @@ fn action_to_byte(action: &str) -> u8 {
         "switch_layout" => 2,
         "switch_lang" => 3,
         "separator" => 4,
+        "row_break" => 5,
+        "shift" => 6,
         _ => 0,
     }
 }
@@ -66,13 +76,16 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn compile_qwerty_fixture() {
+    fn compile_pinyin26_full_us() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../assets/langpacks/vi-v1/layouts/layout_qwerty.yaml");
+            .join("../../../../assets/langpacks/zh-pack-v1/layouts/layout_pinyin26.yaml");
         if !path.exists() {
             return;
         }
-        let bin = compile_layout_yaml(&path).expect("compile");
+        let bin = compile_layout_yaml(&path).expect("compile pinyin26");
         assert!(bin.starts_with(b"YCLY"));
+        // 5 rows → 4 row_break sentinels + keys
+        let key_count = u32::from_le_bytes(bin[72..76].try_into().unwrap());
+        assert!(key_count > 40, "expected full US keyboard keys, got {key_count}");
     }
 }

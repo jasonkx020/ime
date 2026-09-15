@@ -6,7 +6,7 @@ mod handlers;
 
 pub use arena_read::{parse_arena, ArenaCandidate, ArenaCommand, ArenaSnapshot};
 
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -46,13 +46,13 @@ fn with_core_mut<F: FnOnce(&mut CoreState) -> i32>(f: F) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn yc_core_init(data_dir: *const i8) -> i32 {
+pub extern "C" fn yc_core_init(data_dir: *const c_char) -> i32 {
     ffi_guard(|| {
         let path = if data_dir.is_null() {
             PathBuf::from(".")
         } else {
             PathBuf::from(
-                unsafe { CStr::from_ptr(data_dir) }
+                unsafe { CStr::from_ptr(data_dir.cast()) }
                     .to_string_lossy()
                     .into_owned(),
             )
@@ -329,6 +329,29 @@ pub extern "C" fn yc_core_sync_lang_packs() -> i32 {
         }
         #[cfg(not(feature = "data"))]
         {
+            YC_ERR_INTERNAL
+        }
+    })
+}
+
+/// Synchronously install + enable an `.imepack` and sync into the hot path.
+#[no_mangle]
+pub extern "C" fn yc_core_install_langpack(pack_path: *const c_char) -> i32 {
+    ffi_guard(|| {
+        if pack_path.is_null() {
+            return YC_ERR_INTERNAL;
+        }
+        let c_path = unsafe { CStr::from_ptr(pack_path) };
+        let Ok(path) = c_path.to_str() else {
+            return YC_ERR_INTERNAL;
+        };
+        #[cfg(feature = "data")]
+        {
+            with_core_mut(|state| state.install_and_enable_langpack(path))
+        }
+        #[cfg(not(feature = "data"))]
+        {
+            let _ = path;
             YC_ERR_INTERNAL
         }
     })

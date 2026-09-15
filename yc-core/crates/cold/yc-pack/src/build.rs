@@ -8,7 +8,7 @@ use zip::ZipArchive;
 use crate::manifest::{manifest_to_bytes, PackToml, LangPackManifest};
 use crate::skin::{skin_to_bytes, SkinManifest, SkinToml};
 use crate::verify::sha256_bytes;
-use crate::{MANIFEST_FB, SIGNATURE_FILE};
+use crate::MANIFEST_FB;
 
 pub struct PackBuildOutput {
     pub path: PathBuf,

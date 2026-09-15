@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use yc_pack::extract_skin_from_pack;
-use yc_types::{EngineError, HotResult, TaskId};
+use yc_types::{EngineError, HotResult};
 
 use crate::tokens::ThemeTokens;
 
@@ -43,5 +43,3 @@ impl Default for ThemeRuntime {
         Self::new()
     }
 }
-
-pub type ThemeTaskId = TaskId;

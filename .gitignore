@@ -3,6 +3,7 @@ services/yc-admin/data/
 assets/langpacks/zh-pack-v1/lexicon/zh_words.tsv
 assets/langpacks/zh-pack-v1/lexicon/zh_words.dat
 assets/cache/
+assets/dist/
 **/libs/x64/
 **/libs/x86_64/
 **/jniLibs/arm64-v8a/

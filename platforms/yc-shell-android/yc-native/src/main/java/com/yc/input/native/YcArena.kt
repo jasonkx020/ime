@@ -48,18 +48,20 @@ object YcArena {
         val candCount = buf.getInt(24).coerceIn(0, MAX_CANDIDATES)
         val cmdCount = buf.getInt(28).coerceIn(0, MAX_ARENA_COMMANDS)
 
-        val composing = String(data, HEADER_SIZE, composingLen, Charsets.UTF_8)
+        val composing = decodeArenaText(data, HEADER_SIZE, composingLen)
 
         val candidates = mutableListOf<ArenaCandidate>()
-        var slotsOff = HEADER_SIZE + COMPOSING_LEN
+        val slotsOff = HEADER_SIZE + COMPOSING_LEN
         repeat(candCount) { i ->
             val off = slotsOff + i * CAND_SLOT_SIZE
             if (off + CAND_SLOT_SIZE > data.size) return@repeat
             val slot = ByteBuffer.wrap(data, off, CAND_SLOT_SIZE).order(ByteOrder.LITTLE_ENDIAN)
             val id = slot.getInt(0)
             val textLen = slot.getInt(8).coerceIn(0, MAX_CAND_TEXT_LEN)
-            val text = String(data, off + 16, textLen, Charsets.UTF_8)
-            candidates.add(ArenaCandidate(id, text))
+            val text = decodeArenaText(data, off + 16, textLen)
+            if (text.isNotEmpty()) {
+                candidates.add(ArenaCandidate(id, text))
+            }
         }
 
         val commands = mutableListOf<ArenaCommand>()
@@ -72,7 +74,7 @@ object YcArena {
             val param0 = slot.getInt(4)
             val param1 = slot.getInt(8)
             val textLen = slot.getInt(12).coerceIn(0, MAX_CAND_TEXT_LEN)
-            val text = String(data, off + 16, textLen, Charsets.UTF_8)
+            val text = decodeArenaText(data, off + 16, textLen)
             when (cmdType) {
                 CMD_COMMIT -> commands.add(ArenaCommand.Commit(text))
                 CMD_SET_COMPOSING -> commands.add(ArenaCommand.SetComposing(text))
@@ -83,5 +85,25 @@ object YcArena {
         }
 
         return ArenaSnapshot(editorId, seq, statusFlags, composing, candidates, commands)
+    }
+
+    /**
+     * 定长槽位可能在有效 UTF-8 后仍有 NUL/脏字节；按首个 0 截断，并去掉 FFFD/控制符。
+     */
+    fun decodeArenaText(data: ByteArray, offset: Int, claimedLen: Int): String {
+        if (claimedLen <= 0 || offset < 0 || offset >= data.size) return ""
+        val max = minOf(claimedLen, data.size - offset)
+        var end = max
+        for (i in 0 until max) {
+            if (data[offset + i] == 0.toByte()) {
+                end = i
+                break
+            }
+        }
+        if (end <= 0) return ""
+        return String(data, offset, end, Charsets.UTF_8)
+            .filter { ch ->
+                ch != '\u0000' && ch != '\uFFFD' && !ch.isISOControl()
+            }
     }
 }

@@ -49,6 +49,8 @@ object YcNative {
 
     @JvmStatic external fun ycCoreSyncLangPacks(): Int
 
+    @JvmStatic external fun ycCoreInstallLangpack(packPath: String): Int
+
     fun coldSubmit(editorId: Long, kind: Int, payload: ByteArray): Int =
         ycColdSubmit(editorId, kind, payload)
 

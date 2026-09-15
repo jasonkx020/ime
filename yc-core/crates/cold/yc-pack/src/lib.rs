@@ -9,7 +9,9 @@ pub use build::{
     build_langpack_dir, build_skin_dir, extract_manifest_from_pack, extract_skin_from_pack,
     install_pack_to_dir, PackBuildOutput,
 };
-pub use manifest::{LangPackManifest, LexiconRef, PackScheme, PackToml};
+pub use manifest::{
+    manifest_from_bytes, manifest_to_bytes, LangPackManifest, LexiconRef, PackScheme, PackToml,
+};
 pub use skin::{SkinColors, SkinManifest, SkinToml};
 pub use verify::{sha256_file, verify_pack_signature};
 

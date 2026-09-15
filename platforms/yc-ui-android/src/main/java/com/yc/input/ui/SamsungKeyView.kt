@@ -6,7 +6,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.SoundEffectConstants
 import android.view.View
+import android.view.HapticFeedbackConstants
 import kotlin.math.max
 
 class SamsungKeyView @JvmOverloads constructor(
@@ -18,8 +20,14 @@ class SamsungKeyView @JvmOverloads constructor(
     private var rows: List<List<KeyDef>> = Layout26Pinyin.rows
     private var onKey: ((KeyDef) -> Unit)? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val keyBounds = mutableListOf<Pair<KeyDef, RectF>>()
-    private var pressedKey: KeyDef? = null
+    private val keyBounds = mutableListOf<Triple<Int, Int, RectF>>() // row, col, rect
+    private var pressedRow: Int = -1
+    private var pressedCol: Int = -1
+
+    init {
+        isClickable = true
+        isFocusable = false
+    }
 
     override fun applyTheme(tokens: ThemeTokens) {
         this.tokens = tokens
@@ -28,6 +36,8 @@ class SamsungKeyView @JvmOverloads constructor(
 
     fun setLayoutRows(newRows: List<List<KeyDef>>) {
         rows = newRows
+        pressedRow = -1
+        pressedCol = -1
         invalidate()
     }
 
@@ -46,20 +56,30 @@ class SamsungKeyView @JvmOverloads constructor(
 
         val margin = dp(12f)
         val rowGap = dp(6f)
-        val keyH = dp(44f)
+        val keyH = dp(42f)
         var y = margin
         val rows = this.rows
 
-        for (row in rows) {
+        val rowGapUsed = if (rows.size > 1) rowGap else 0f
+        val contentH = height - margin * 2
+        val fittedKeyH = if (rows.isNotEmpty()) {
+            max(dp(36f), (contentH - rowGapUsed * (rows.size - 1)) / rows.size)
+        } else {
+            keyH
+        }
+        val useH = minOf(keyH, fittedKeyH)
+
+        for ((ri, row) in rows.withIndex()) {
             val totalWeight = row.sumOf { it.widthWeight.toDouble() }.toFloat()
             val rowWidth = width - margin * 2
             var x = margin
-            for (key in row) {
+            for ((ci, key) in row.withIndex()) {
                 val w = max(dp(28f), rowWidth * key.widthWeight / totalWeight)
-                val rect = RectF(x, y, x + w - dp(3f), y + keyH)
-                keyBounds.add(key to rect)
+                val rect = RectF(x, y, x + w - dp(3f), y + useH)
+                keyBounds.add(Triple(ri, ci, rect))
+                val pressed = ri == pressedRow && ci == pressedCol
                 val bg = when {
-                    key == pressedKey -> tokens.keyPressed
+                    pressed -> tokens.keyPressed
                     key.style == KeyStyle.Utility -> tokens.keyUtility
                     key.style == KeyStyle.Accent -> tokens.keyAccent
                     else -> tokens.keyNormal
@@ -73,35 +93,54 @@ class SamsungKeyView @JvmOverloads constructor(
                 canvas.drawText(key.label, rect.centerX(), ty, paint)
                 x += w
             }
-            y += keyH + rowGap
+            y += useH + rowGap
         }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                pressedKey = hitTest(event.x, event.y)
-                invalidate()
+            MotionEvent.ACTION_DOWN -> {
+                val hit = hitTest(event.x, event.y)
+                if (hit != null) {
+                    pressedRow = hit.first
+                    pressedCol = hit.second
+                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    playSoundEffect(SoundEffectConstants.CLICK)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val hit = hitTest(event.x, event.y)
+                val nr = hit?.first ?: -1
+                val nc = hit?.second ?: -1
+                if (nr != pressedRow || nc != pressedCol) {
+                    pressedRow = nr
+                    pressedCol = nc
+                    invalidate()
+                }
             }
             MotionEvent.ACTION_UP -> {
-                val key = hitTest(event.x, event.y)
-                pressedKey = null
+                val hit = hitTest(event.x, event.y)
+                pressedRow = -1
+                pressedCol = -1
                 invalidate()
-                if (key != null) {
-                    onKey?.invoke(key)
+                if (hit != null) {
+                    val (ri, ci) = hit
+                    rows.getOrNull(ri)?.getOrNull(ci)?.let { onKey?.invoke(it) }
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
-                pressedKey = null
+                pressedRow = -1
+                pressedCol = -1
                 invalidate()
             }
         }
         return true
     }
 
-    private fun hitTest(x: Float, y: Float): KeyDef? {
-        for ((key, rect) in keyBounds) {
-            if (rect.contains(x, y)) return key
+    private fun hitTest(x: Float, y: Float): Pair<Int, Int>? {
+        for ((ri, ci, rect) in keyBounds) {
+            if (rect.contains(x, y)) return ri to ci
         }
         return null
     }

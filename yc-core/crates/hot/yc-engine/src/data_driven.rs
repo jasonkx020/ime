@@ -235,6 +235,16 @@ impl InputEngine for DataDrivenEngine {
         if invalid_session(editor_id, self.active) {
             return session_invalid();
         }
+        if self.composing.is_empty() {
+            return Ok(EngineStep {
+                composing: ComposingText::empty(),
+                candidates: Vec::new(),
+                commands: vec![UiCommand::DeleteSurrounding {
+                    before: 1,
+                    after: 0,
+                }],
+            });
+        }
         self.composing.pop();
         self.cand_pool = self.lookup();
         self.cand_page = 0;

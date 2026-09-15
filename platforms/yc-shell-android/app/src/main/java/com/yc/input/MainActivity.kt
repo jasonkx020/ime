@@ -41,21 +41,17 @@ class MainActivity : Activity() {
             assets.open(assetPath).use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             }
-            val rc = YcNative.coldSubmit(
-                editorId = 0,
-                kind = 1, // YC_COLD_LANGPACK_INSTALL
-                payload = out.absolutePath.toByteArray(),
-            )
-            msg.append("install $fileName: rc=$rc\n")
-            if (enable && rc == 0) {
-                val packId = fileName.removeSuffix(".imepack")
-                val enableRc = YcNative.coldSubmit(
+            if (enable) {
+                // Sync path: install+enable+scheduler register (avoids cold async race).
+                val rc = YcNative.ycCoreInstallLangpack(out.absolutePath)
+                msg.append("install+enable $fileName: rc=$rc\n")
+            } else {
+                val rc = YcNative.coldSubmit(
                     editorId = 0,
-                    kind = 2, // YC_COLD_LANGPACK_ENABLE
-                    payload = packId.toByteArray(),
+                    kind = 1, // YC_COLD_LANGPACK_INSTALL
+                    payload = out.absolutePath.toByteArray(),
                 )
-                msg.append("enable $packId: rc=$enableRc\n")
-                YcNative.ycCoreSyncLangPacks()
+                msg.append("install $fileName: rc=$rc (queued)\n")
             }
         } catch (_: Exception) {
             msg.append("$fileName 未打包进 assets；运行 scripts/build-all.ps1\n")

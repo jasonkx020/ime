@@ -75,11 +75,15 @@ class SamsungCandBar @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) {
-            for ((cand, rect) in chipBounds) {
-                if (rect.contains(event.x, event.y)) {
-                    onCandidate?.invoke(cand)
-                    return true
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> return true
+            MotionEvent.ACTION_UP -> {
+                for ((cand, rect) in chipBounds) {
+                    if (rect.contains(event.x, event.y)) {
+                        performClick()
+                        onCandidate?.invoke(cand)
+                        return true
+                    }
                 }
             }
         }

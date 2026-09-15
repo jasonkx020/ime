@@ -149,3 +149,11 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_yc_input_native_YcNative_ycCoreSyncLangPacks(JNIEnv *, jclass) {
     return yc_core_sync_lang_packs();
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_yc_input_native_YcNative_ycCoreInstallLangpack(JNIEnv *env, jclass, jstring pack_path) {
+    const char *path = env->GetStringUTFChars(pack_path, nullptr);
+    const jint rc = yc_core_install_langpack(path);
+    env->ReleaseStringUTFChars(pack_path, path);
+    return rc;
+}

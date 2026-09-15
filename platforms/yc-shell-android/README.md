@@ -10,12 +10,14 @@ Android shell for YC Input Method. Package `com.yc.input`.
 
 ## Build `libyc_ffi.so`
 
-From the repo root, build Rust FFI for all Android ABIs and sync headers:
+From the repo root, build Rust FFI for all Android ABIs (**with `--features full`** so cold lang-pack install works) and sync headers:
 
 ```powershell
 cd yc-core
 .\scripts\build-android-ndk.ps1
 ```
+
+Without `full`, `yc_cold_submit` / lang-pack install returns `-2` (`YC_ERR_BUSY`).
 
 This copies:
 
