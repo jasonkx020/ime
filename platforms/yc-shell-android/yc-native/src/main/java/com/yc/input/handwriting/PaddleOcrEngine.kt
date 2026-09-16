@@ -48,12 +48,13 @@ class PaddleOcrEngine(private val context: Context) {
             val engine = runBlocking {
                 PaddleOCR.create(
                     context = context.applicationContext,
+                    // Handwriting strokes: larger det input + softer DB thresholds.
                     config = PaddleOCRConfig(
-                        detLimitSideLen = 64,
-                        detLimitType = "min",
-                        detThresh = 0.3f,
-                        detBoxThresh = 0.5f,
-                        detUnclipRatio = 1.5f,
+                        detLimitSideLen = 960,
+                        detLimitType = "max",
+                        detThresh = 0.2f,
+                        detBoxThresh = 0.3f,
+                        detUnclipRatio = 2.0f,
                         recScoreThresh = 0.0f,
                         recBatchSize = 1,
                     ),
@@ -90,7 +91,12 @@ class PaddleOcrEngine(private val context: Context) {
         val bitmap = rasterizeBitmap(strokes) ?: return RecognizeOutput(emptyList(), null, continuous)
         return try {
             val result = runBlocking { engine.recognize(bitmap) }
-            mapResult(result.results.map { it.text to it.confidence }, continuous, topK)
+            Log.i(
+                TAG,
+                "ocr raw lines=${result.lineCount} det=${result.detectionTimeMs}ms rec=${result.recognitionTimeMs}ms " +
+                    "texts=${result.results.joinToString("|") { "${it.text}(${"%.2f".format(it.confidence)},alt=${it.alternatives.size})" }}",
+            )
+            mapResult(result.results, continuous, topK)
         } catch (t: Throwable) {
             Log.w(TAG, "PP-OCRv6 recognize failed", t)
             RecognizeOutput(emptyList(), null, continuous)
@@ -113,28 +119,44 @@ class PaddleOcrEngine(private val context: Context) {
     }
 
     private fun mapResult(
-        items: List<Pair<String, Float>>,
+        items: List<com.paddle.ocr.model.OCRResult>,
         continuous: Boolean,
         topK: Int,
     ): RecognizeOutput {
         val ordered = LinkedHashMap<String, Float>()
         var minConf = 1f
-        for ((text, confRaw) in items) {
-            val label = text.trim()
-            if (label.isEmpty()) continue
-            val conf = confRaw.coerceIn(0f, 1f).let { if (it <= 0f) 1f else it }
-            minConf = min(minConf, conf)
-            ordered.putIfAbsent(label, conf)
-            if (label.length > 1) {
-                for (ch in label) {
-                    if (!ch.isWhitespace()) {
-                        ordered.putIfAbsent(ch.toString(), conf * 0.95f)
+
+        fun putCand(text: String, score: Float) {
+            // Handwriting pad is Chinese-only: drop Latin / digits / other scripts.
+            val t = chineseOnly(text)
+            if (t.isEmpty()) return
+            val s = score.coerceIn(0f, 1f).let { if (it <= 0f) 1f else it }
+            val prev = ordered[t]
+            if (prev == null || s > prev) ordered[t] = s
+        }
+
+        for (item in items) {
+            val conf = item.confidence.coerceIn(0f, 1f).let { if (it <= 0f) 1f else it }
+            val label = chineseOnly(item.text)
+            if (label.isNotEmpty()) {
+                minConf = min(minConf, conf)
+                putCand(label, conf)
+                if (label.length > 1) {
+                    for (ch in label) {
+                        putCand(ch.toString(), conf * 0.95f)
                     }
                 }
             }
+            // Alternatives even when primary OCR text has no Han (common on stroke crops).
+            for ((alt, altScore) in item.alternatives) {
+                putCand(alt, altScore)
+            }
         }
-        val joined = items.map { it.first.trim() }.filter { it.isNotEmpty() }.joinToString("")
+        val joined = chineseOnly(
+            items.map { it.text }.joinToString(""),
+        )
         if (joined.isNotEmpty()) {
+            // Prefer full OCR string as first candidate
             val rest = LinkedHashMap<String, Float>()
             rest[joined] = minConf
             for ((k, v) in ordered) {
@@ -144,14 +166,21 @@ class PaddleOcrEngine(private val context: Context) {
             ordered.putAll(rest)
             if (!continuous && joined.length > 1) {
                 for (ch in joined) {
-                    if (!ch.isWhitespace()) {
-                        ordered.putIfAbsent(ch.toString(), minConf * 0.9f)
-                    }
+                    putCand(ch.toString(), minConf * 0.9f)
                 }
             }
         }
 
-        val list = ordered.entries.take(topK).map { Candidate(it.key, it.value) }
+        // Rank: primary string first (already), then by score desc for the rest
+        val ranked = ordered.entries.toList().let { entries ->
+            if (entries.isEmpty()) emptyList()
+            else {
+                val head = entries.first()
+                val tail = entries.drop(1).sortedByDescending { it.value }
+                listOf(head) + tail
+            }
+        }
+        val list = ranked.take(topK).map { Candidate(it.key, it.value) }
         if (list.isEmpty()) {
             return RecognizeOutput(emptyList(), null, continuous)
         }
@@ -168,10 +197,27 @@ class PaddleOcrEngine(private val context: Context) {
         private const val DET_ASSET = "models/ppocr/det/inference.onnx"
         private const val REC_ASSET = "models/ppocr/rec/inference.onnx"
         private const val REC_YML_ASSET = "models/ppocr/rec/inference.yml"
-        private const val RENDER_TARGET_SIZE = 360
-        private const val RENDER_STROKE_RATIO = 0.044f
+        private const val RENDER_TARGET_SIZE = 480
+        private const val RENDER_STROKE_RATIO = 0.08f
         private const val CLOUD_THRESHOLD = 0.6f
-        const val TOP_K = 30
+        /** Match core HW_MAX_CANDIDATES / FFI apply_result cap. */
+        const val TOP_K = 200
+
+        /** CJK Unified + Ext-A + Compatibility + ideographic zero. */
+        private fun isHanChar(ch: Char): Boolean {
+            val c = ch.code
+            return c in 0x3400..0x4DBF ||
+                c in 0x4E00..0x9FFF ||
+                c in 0xF900..0xFAFF ||
+                c == 0x3007
+        }
+
+        private fun chineseOnly(text: String): String =
+            buildString(text.length) {
+                for (ch in text) {
+                    if (isHanChar(ch)) append(ch)
+                }
+            }
 
         fun rasterizeBitmap(strokes: List<HandwritingPad.StrokePayload>): Bitmap? {
             if (strokes.isEmpty()) return null
@@ -193,7 +239,8 @@ class PaddleOcrEngine(private val context: Context) {
                 }
             }
             if (!any) return null
-            val pad = 0.08f
+            // Larger pad so thin strokes are easier for det/rec.
+            val pad = 0.12f
             minX = (minX - pad).coerceAtLeast(0f)
             minY = (minY - pad).coerceAtLeast(0f)
             maxX = (maxX + pad).coerceAtMost(1f)
@@ -221,6 +268,12 @@ class PaddleOcrEngine(private val context: Context) {
             fun mapY(ny: Float): Float = ((ny - y0) / side).coerceIn(0f, 1f) * (size - 1)
             for (stroke in strokes) {
                 val n = stroke.timesMs.size
+                if (n == 1) {
+                    val x = mapX(stroke.xyPressure[0])
+                    val y = mapY(stroke.xyPressure[1])
+                    canvas.drawPoint(x, y, paint)
+                    continue
+                }
                 if (n < 2) continue
                 for (i in 0 until n - 1) {
                     canvas.drawLine(

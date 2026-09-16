@@ -12,8 +12,8 @@ use yc_types::CandidateSource;
 
 /// Arena page size (ImmSnapshot / YC_MAX_CANDIDATES).
 pub const HW_PAGE_SIZE: usize = 9;
-/// Max Handwritten / template candidates retained in the session pool.
-pub const HW_MAX_CANDIDATES: usize = 30;
+/// Max OCR / handwriting candidates retained in the session pool (paged in CandBar).
+pub const HW_MAX_CANDIDATES: usize = 200;
 
 #[derive(Debug, Clone)]
 struct HwSession {
@@ -27,6 +27,10 @@ struct HwSession {
     canvas_height: u32,
     writing_mode: WritingMode,
     pending_cloud: bool,
+    /// Accumulated committed text for lexicon association.
+    assoc_context: String,
+    /// True when candidates are association suffixes (not OCR).
+    assoc_active: bool,
 }
 
 impl HwSession {
@@ -41,6 +45,8 @@ impl HwSession {
             canvas_height: 240,
             writing_mode: WritingMode::SingleChar,
             pending_cloud: false,
+            assoc_context: String::new(),
+            assoc_active: false,
         }
     }
 
@@ -51,6 +57,8 @@ impl HwSession {
         self.cand_page = 0;
         self.session_stroke_id = 0;
         self.pending_cloud = false;
+        self.assoc_context.clear();
+        self.assoc_active = false;
     }
 
     fn total_pages(&self) -> u32 {
@@ -210,6 +218,9 @@ impl HandwritingService {
             session.pending_cloud = false;
             session.candidates = result.candidates.clone();
             session.cand_page = 0;
+            // OCR / template results replace association context.
+            session.assoc_context.clear();
+            session.assoc_active = false;
         }
         Ok(())
     }
@@ -354,6 +365,15 @@ impl HandwritingService {
             .find(|c| c.id == candidate_id)
             .map(|c| c.text.clone())
             .ok_or(EngineError::Unsupported)?;
+        let was_assoc = session.assoc_active;
+        if clears_hw_assoc_context(&text) {
+            session.assoc_context.clear();
+            session.assoc_active = false;
+        } else if was_assoc {
+            session.assoc_context.push_str(&text);
+        } else {
+            session.assoc_context = text.clone();
+        }
         session.strokes.clear();
         session.candidates.clear();
         session.cand_page = 0;
@@ -363,12 +383,56 @@ impl HandwritingService {
         Ok(vec![UiCommand::Commit { text }])
     }
 
+    pub fn assoc_context(&self, editor_id: EditorId) -> String {
+        self.sessions
+            .get(&editor_id.raw())
+            .map(|s| s.assoc_context.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn clear_assoc_context(&mut self, editor_id: EditorId) {
+        if let Some(session) = self.sessions.get_mut(&editor_id.raw()) {
+            session.assoc_context.clear();
+            session.assoc_active = false;
+        }
+    }
+
+    /// Inject lexicon association suffixes after select (source should be Hot).
+    pub fn set_association_candidates(
+        &mut self,
+        editor_id: EditorId,
+        mut candidates: Vec<Candidate>,
+    ) -> HotResult<()> {
+        let session = self
+            .sessions
+            .get_mut(&editor_id.raw())
+            .ok_or(EngineError::SessionInvalid)?;
+        for (i, c) in candidates.iter_mut().enumerate() {
+            c.id = i as u32;
+            c.source = CandidateSource::Hot;
+        }
+        let n = candidates.len().min(HW_MAX_CANDIDATES);
+        session.candidates = candidates.into_iter().take(n).collect();
+        session.cand_page = 0;
+        session.assoc_active = !session.candidates.is_empty();
+        Ok(())
+    }
+
     pub fn stroke_count(&self, editor_id: EditorId) -> usize {
         self.sessions
             .get(&editor_id.raw())
             .map(|s| s.strokes.len())
             .unwrap_or(0)
     }
+}
+
+fn clears_hw_assoc_context(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(
+            c,
+            '。' | '！' | '？' | '；' | '，' | '.' | '!' | '?' | ';' | ',' | '\n' | '\r'
+        )
+    })
 }
 
 impl Default for HandwritingService {

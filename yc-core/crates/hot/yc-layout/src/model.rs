@@ -5,6 +5,8 @@ pub struct LayoutYaml {
     pub layout_id: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// Key grid; handwriting / non-key layouts may omit (empty).
+    #[serde(default)]
     pub rows: Vec<Vec<KeyYaml>>,
 }
 

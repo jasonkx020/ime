@@ -5,13 +5,17 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import kotlin.math.max
+import kotlin.math.min
 
 /**
- * Handwriting pad: mode bar + ink canvas + back-to-keyboard.
+ * Handwriting pad: mode bar + **square** ink canvas + back-to-keyboard.
  * Listeners are invoked by shell; MOVE never calls FFI.
  */
 class HandwritingPad @JvmOverloads constructor(
@@ -28,6 +32,7 @@ class HandwritingPad @JvmOverloads constructor(
 
     private var tokens = ThemeTokens()
     private val topBar = HwActionBar(context)
+    private val inkHost = SquareInkHost(context)
     private val ink = InkCanvas(context)
     private val bottomBar = HwBottomBar(context)
 
@@ -42,12 +47,21 @@ class HandwritingPad @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
-        val topLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
-        val inkLp = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
-        val botLp = LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
-        addView(topBar, topLp)
-        addView(ink, inkLp)
-        addView(bottomBar, botLp)
+        val barH = dp(36)
+        addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, barH))
+        inkHost.addView(
+            ink,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER,
+            ),
+        )
+        addView(
+            inkHost,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
+        )
+        addView(bottomBar, LayoutParams(LayoutParams.MATCH_PARENT, barH))
 
         topBar.setOnAction { action ->
             if (recognizing && action == HwActionBar.Action.Recognize) return@setOnAction
@@ -103,11 +117,11 @@ class HandwritingPad @JvmOverloads constructor(
 
     fun isRecognizing(): Boolean = recognizing
 
-
     fun applyTheme(tokens: ThemeTokens) {
         this.tokens = tokens
         setBackgroundColor(tokens.keyboardBg)
         topBar.applyTheme(tokens)
+        inkHost.applyTheme(tokens)
         ink.applyTheme(tokens)
         bottomBar.applyTheme(tokens)
     }
@@ -147,6 +161,60 @@ class HandwritingPad @JvmOverloads constructor(
 
     private fun dp(v: Int): Int =
         (v * resources.displayMetrics.density).toInt()
+}
+
+/**
+ * Host that forces a centered square writing surface (边长 = min(可用宽, 最大边)).
+ */
+private class SquareInkHost(context: Context) : FrameLayout(context) {
+    private var tokens = ThemeTokens()
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(1.5f)
+    }
+    private val margin = dp(8)
+    private val maxSide = dp(320)
+
+    fun applyTheme(tokens: ThemeTokens) {
+        this.tokens = tokens
+        borderPaint.color = tokens.hwGrid
+        setBackgroundColor(tokens.keyboardBg)
+        invalidate()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = MeasureSpec.getSize(widthMeasureSpec).coerceAtLeast(0)
+        val side = min(max(width - margin * 2, dp(120)), maxSide)
+        val height = side + margin * 2
+        val childSpec = MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY)
+        for (i in 0 until childCount) {
+            getChildAt(i).measure(childSpec, childSpec)
+        }
+        setMeasuredDimension(
+            resolveSize(width, widthMeasureSpec),
+            height,
+        )
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val side = min(max(width - margin * 2, dp(120)), maxSide)
+        val childLeft = (width - side) / 2
+        val childTop = margin
+        for (i in 0 until childCount) {
+            getChildAt(i).layout(childLeft, childTop, childLeft + side, childTop + side)
+        }
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        val side = min(max(width - margin * 2, dp(120)), maxSide)
+        val l = (width - side) / 2f
+        val t = margin.toFloat()
+        canvas.drawRect(l, t, l + side, t + side, borderPaint)
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Float): Float = v * resources.displayMetrics.density
 }
 
 private class HwActionBar(context: Context) : View(context) {
@@ -207,7 +275,6 @@ private class HwActionBar(context: Context) : View(context) {
             paint.textAlign = Paint.Align.CENTER
             canvas.drawText("识别中…", width / 2f, cy, paint)
         }
-        // right-aligned undo/clear
         val rightLabels = listOf("撤销" to Action.Undo, "清空" to Action.Clear)
         var rx = width - dp(8f)
         for ((label, action) in rightLabels.asReversed()) {

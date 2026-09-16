@@ -234,7 +234,7 @@ Java_com_yc_input_native_YcNative_ycHwApplyResult(
     }
     const jsize n = env->GetArrayLength(texts);
     const jsize n_scores = env->GetArrayLength(scores);
-    if (n <= 0 || n > 30 || n != n_scores) {
+    if (n <= 0 || n > 200 || n != n_scores) {
         return YC_ERR_INTERNAL;
     }
     jfloat *score_elems = env->GetFloatArrayElements(scores, nullptr);

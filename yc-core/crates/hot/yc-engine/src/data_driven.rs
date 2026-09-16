@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use yc_lexicon::{LexiconManager, UserWordStore};
+use yc_lexicon::{clears_assoc_context, LexiconManager, UserWordStore};
 use yc_scheme::SchemeDesc;
 use yc_scheme::TransformKind;
 use yc_types::{
@@ -13,6 +13,9 @@ use yc_types::{
 
 use crate::pinyin_seg::{is_valid_pinyin_input, normalize_query};
 use crate::{invalid_session, key_code_to_char, session_invalid, InputEngine};
+
+/// Max association candidates after select (CandBar pages of 9).
+pub const ASSOC_CANDIDATE_LIMIT: usize = 200;
 
 #[derive(Debug)]
 pub struct DataDrivenEngine {
@@ -25,6 +28,10 @@ pub struct DataDrivenEngine {
     cand_pool: Vec<Candidate>,
     cand_page: u32,
     last_query_key: String,
+    /// Accumulated committed text used for lexicon association.
+    assoc_context: String,
+    /// True when `cand_pool` currently holds association suffixes.
+    assoc_active: bool,
 }
 
 impl DataDrivenEngine {
@@ -38,6 +45,8 @@ impl DataDrivenEngine {
             cand_pool: Vec::new(),
             cand_page: 0,
             last_query_key: String::new(),
+            assoc_context: String::new(),
+            assoc_active: false,
         }
     }
 
@@ -50,6 +59,10 @@ impl DataDrivenEngine {
 
     pub fn set_user_words(&mut self, store: Arc<Mutex<UserWordStore>>) {
         self.lexicon.set_user_words(store);
+    }
+
+    pub fn set_shared_ngram(&mut self, shared: yc_lexicon::SharedCharNgram) {
+        self.lexicon.set_shared_ngram(shared);
     }
 
     pub fn set_cand_pool(&mut self, cands: Vec<Candidate>) {
@@ -84,6 +97,43 @@ impl DataDrivenEngine {
 
     pub fn touch_user_word(&self, pinyin: &str, word: &str) {
         self.lexicon.touch_user_word(pinyin, word);
+    }
+
+    pub fn associate(&self, prefix: &str, limit: usize) -> Vec<Candidate> {
+        self.lexicon.associate(prefix, limit)
+    }
+
+    pub fn assoc_context(&self) -> &str {
+        &self.assoc_context
+    }
+
+    pub fn clear_assoc(&mut self) {
+        self.assoc_context.clear();
+        self.assoc_active = false;
+    }
+
+    pub fn set_assoc_active(&mut self, active: bool) {
+        self.assoc_active = active;
+    }
+
+    /// Update association context after Commit. Candidate pool is filled only by
+    /// `Scheduler::fill_association` (shared with handwriting).
+    fn apply_commit_association(&mut self, committed: &str) {
+        if clears_assoc_context(committed) {
+            self.clear_assoc();
+            self.cand_pool.clear();
+            self.cand_page = 0;
+            return;
+        }
+        if self.assoc_active {
+            self.assoc_context.push_str(committed);
+        } else {
+            self.assoc_context = committed.to_string();
+        }
+        self.cand_pool.clear();
+        self.cand_page = 0;
+        // Stay in assoc mode until Scheduler fills; empty fill clears via set_assoc_active.
+        self.assoc_active = true;
     }
 
     fn transformed(&self, raw: &str) -> String {
@@ -165,6 +215,7 @@ impl InputEngine for DataDrivenEngine {
         self.cand_pool.clear();
         self.cand_page = 0;
         self.last_query_key.clear();
+        self.clear_assoc();
     }
 
     fn feed(
@@ -176,12 +227,17 @@ impl InputEngine for DataDrivenEngine {
         if invalid_session(editor_id, self.active) {
             return session_invalid();
         }
+        // New composing input ends association mode.
+        if key_code != b' ' as u32 {
+            self.clear_assoc();
+        }
         if key_code == b' ' as u32 {
             if input_mode.ascii_mode {
                 let text = self.composing.clone();
                 self.composing.clear();
                 self.cand_pool.clear();
                 self.cand_page = 0;
+                self.apply_commit_association(&text);
                 return Ok(EngineStep {
                     composing: ComposingText::empty(),
                     candidates: Vec::new(),
@@ -195,8 +251,7 @@ impl InputEngine for DataDrivenEngine {
                 .or_else(|| self.lookup().first().map(|c| c.text.clone()))
                 .unwrap_or_else(|| self.composing.clone());
             self.composing.clear();
-            self.cand_pool.clear();
-            self.cand_page = 0;
+            self.apply_commit_association(&text);
             return Ok(EngineStep {
                 composing: ComposingText::empty(),
                 candidates: Vec::new(),
@@ -239,8 +294,7 @@ impl InputEngine for DataDrivenEngine {
             })
             .ok_or(EngineError::Unsupported)?;
         self.composing.clear();
-        self.cand_pool.clear();
-        self.cand_page = 0;
+        self.apply_commit_association(&text);
         Ok(EngineStep {
             composing: ComposingText::empty(),
             candidates: Vec::new(),
@@ -253,6 +307,9 @@ impl InputEngine for DataDrivenEngine {
             return session_invalid();
         }
         if self.composing.is_empty() {
+            self.clear_assoc();
+            self.cand_pool.clear();
+            self.cand_page = 0;
             return Ok(EngineStep {
                 composing: ComposingText::empty(),
                 candidates: Vec::new(),
@@ -262,6 +319,7 @@ impl InputEngine for DataDrivenEngine {
                 }],
             });
         }
+        self.clear_assoc();
         self.composing.pop();
         self.cand_pool = self.lookup();
         self.cand_page = 0;

@@ -80,18 +80,22 @@ class InkCanvas @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(tokens.hwCanvasBg)
-        if (showGrid) {
-            val step = dp(24f)
-            var x = step
-            while (x < width) {
-                canvas.drawLine(x, 0f, x, height.toFloat(), gridPaint)
-                x += step
-            }
-            var y = step
-            while (y < height) {
-                canvas.drawLine(0f, y, width.toFloat(), y, gridPaint)
-                y += step
-            }
+        if (showGrid && width > 0 && height > 0) {
+            // 标准正方形书写格：外框 + 田字中线 + 米字虚线感辅助线
+            val inset = dp(1f)
+            val l = inset
+            val t = inset
+            val r = width - inset
+            val b = height - inset
+            val cx = width / 2f
+            val cy = height / 2f
+            gridPaint.strokeWidth = dp(1.2f)
+            canvas.drawRect(l, t, r, b, gridPaint)
+            canvas.drawLine(cx, t, cx, b, gridPaint)
+            canvas.drawLine(l, cy, r, cy, gridPaint)
+            gridPaint.strokeWidth = dp(0.8f)
+            canvas.drawLine(l, t, r, b, gridPaint)
+            canvas.drawLine(r, t, l, b, gridPaint)
         }
         for ((p, w) in paths) {
             strokePaint.strokeWidth = w

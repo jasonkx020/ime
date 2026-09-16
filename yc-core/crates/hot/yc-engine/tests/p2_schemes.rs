@@ -180,13 +180,66 @@ fn zh_pack_yi_paging_selects_beyond_first_page() {
     assert!(!page1.is_empty());
     assert_ne!(page1[0].text, first_page0);
     let pick = page1[0].text.clone();
-    let step = engine.select(editor, 0).unwrap();
+        let step = engine.select(editor, 0).unwrap();
     assert!(
         step.commands.iter().any(|c| matches!(
             c,
             yc_types::UiCommand::Commit { text } if text == &pick
         )),
         "select page-local 0 should commit {pick}"
+    );
+}
+
+#[test]
+fn zh_pack_select_ni_yields_association() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../assets/langpacks/zh-pack-v1");
+    if !root.exists() {
+        return;
+    }
+    let pack_path = std::env::temp_dir().join("yc_engine_zh_assoc.imepack");
+    let built = build_langpack_dir(&root, &pack_path).expect("build");
+    let data = std::env::temp_dir().join("yc_engine_zh_assoc_install");
+    let _ = std::fs::remove_dir_all(&data);
+    yc_pack::install_pack_to_dir(&pack_path, &data).expect("install");
+    let install_path = data.join(&built.manifest.id);
+    let scheme_bin = std::fs::read(install_path.join("scheme/pinyin_full.bin")).unwrap();
+    let desc = SchemeDesc::from_bytes(&scheme_bin).unwrap();
+    let mut engine = DataDrivenEngine::new(built.manifest.id.clone(), desc);
+    engine
+        .load_lexicon(
+            &built.manifest.id,
+            &install_path
+                .join(built.manifest.lexicon.effective_dat_path())
+                .to_string_lossy(),
+        )
+        .unwrap();
+    let editor = EditorId::from_raw(1);
+    engine.reset(editor);
+    for ch in "ni".chars() {
+        engine
+            .feed(editor, ch as u32, &Default::default())
+            .unwrap();
+    }
+    let page = engine.current_paged_step();
+    let ni_id = page
+        .candidates
+        .iter()
+        .find(|c| c.text == "你")
+        .map(|c| c.id)
+        .expect("你 should be in ni candidates");
+    let step = engine.select(editor, ni_id).unwrap();
+    // Pool is filled only by Scheduler::fill_association; engine only updates context.
+    assert!(
+        step.candidates.is_empty(),
+        "select must not fill assoc pool itself"
+    );
+    assert_eq!(engine.assoc_context(), "你");
+    let assoc = engine.associate("你", 50);
+    assert!(
+        assoc.iter().any(|c| c.text == "好" || c.text == "们"),
+        "lexicon associate(你) should include 好/们, got {:?}",
+        assoc.iter().map(|c| &c.text).collect::<Vec<_>>()
     );
 }
 

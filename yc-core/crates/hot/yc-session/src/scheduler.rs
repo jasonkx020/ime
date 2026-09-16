@@ -1,9 +1,10 @@
 use yc_engine::EngineFactory;
 use yc_handwriting::HandwritingService;
-use yc_intel::{LightIntel, UserBoostIntel};
+use yc_intel::{LightIntel, NgramAssocIntel};
+use yc_lexicon::clears_assoc_context;
 use yc_types::{
-    ComposingText, EditorId, EngineError, HotOutcome, ImmSnapshot, InputScheme, KeyboardLayout,
-    Language, PrivacyLevel, UiCommand, UserAction,
+    Candidate, ComposingText, EditorId, EngineError, HotOutcome, ImmSnapshot, InputScheme,
+    KeyboardLayout, Language, PrivacyLevel, UiCommand, UserAction,
 };
 
 use crate::langpack::EnabledLangPack;
@@ -18,10 +19,11 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn new(factory: EngineFactory) -> Self {
         let store = factory.user_words();
+        let ngram = factory.shared_ngram();
         Self {
             factory,
             enabled_packs: Vec::new(),
-            intel: Box::new(UserBoostIntel::new(store)),
+            intel: Box::new(NgramAssocIntel::new(store, ngram)),
         }
     }
 
@@ -231,8 +233,10 @@ impl Scheduler {
         mode.lang = Language::Zh;
         sessions.set_input_mode(editor_id, mode);
         self.factory.reset_active(editor_id);
+        self.factory.clear_assoc_context();
         sessions.update_composing(editor_id, ComposingText::empty());
         handwriting.begin(editor_id);
+        handwriting.clear_assoc_context(editor_id);
         self.hw_outcome(sessions, handwriting, editor_id, vec![UiCommand::ReloadKeyboard {
             layout: KeyboardLayout::HandwritingPad,
             layout_id: "layout_handwriting".into(),
@@ -246,6 +250,8 @@ impl Scheduler {
         editor_id: EditorId,
     ) -> Result<HotOutcome, EngineError> {
         handwriting.clear(editor_id)?;
+        handwriting.clear_assoc_context(editor_id);
+        self.factory.clear_assoc_context();
         let mut mode = sessions.input_mode(editor_id).unwrap_or_default();
         mode.scheme = InputScheme::PinyinFull;
         mode.layout = KeyboardLayout::Pinyin26;
@@ -390,6 +396,11 @@ impl Scheduler {
         candidate_id: u32,
     ) -> Result<HotOutcome, EngineError> {
         let commands = handwriting.select_candidate(editor_id, candidate_id)?;
+        let ctx = handwriting.assoc_context(editor_id);
+        if !ctx.is_empty() {
+            let ranked = self.fill_association(&ctx);
+            let _ = handwriting.set_association_candidates(editor_id, ranked);
+        }
         self.hw_outcome(sessions, handwriting, editor_id, commands)
     }
 
@@ -588,6 +599,24 @@ impl Scheduler {
         })
     }
 
+    /// Sole association algorithm for pinyin and handwriting:
+    /// lexicon.associate(ctx) → LightIntel ngram rerank.
+    fn fill_association(&mut self, ctx: &str) -> Vec<Candidate> {
+        let ctx = ctx.trim();
+        if ctx.is_empty() || clears_assoc_context(ctx) {
+            return Vec::new();
+        }
+        let assoc = self
+            .factory
+            .associate(ctx, yc_engine::ASSOC_CANDIDATE_LIMIT);
+        match self.intel.rerank(ctx, assoc) {
+            Ok(ranked) => ranked,
+            Err(_) => self
+                .factory
+                .associate(ctx, yc_engine::ASSOC_CANDIDATE_LIMIT),
+        }
+    }
+
     fn finish_step(
         &mut self,
         sessions: &mut SessionManager,
@@ -599,10 +628,36 @@ impl Scheduler {
             .privacy_of(editor_id)
             .unwrap_or(PrivacyLevel::Normal);
 
-        if !step.candidates.is_empty() {
-            let prefix = step.composing.text.clone();
+        let has_commit = step
+            .commands
+            .iter()
+            .any(|c| matches!(c, UiCommand::Commit { .. }));
+
+        if has_commit {
+            // Shared association path (same as handwriting).
+            let mut ctx = self.factory.assoc_context();
+            if ctx.is_empty() {
+                ctx = step
+                    .commands
+                    .iter()
+                    .find_map(|c| match c {
+                        UiCommand::Commit { text }
+                            if !text.is_empty() && !clears_assoc_context(text) =>
+                        {
+                            Some(text.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+            }
+            let ranked = self.fill_association(&ctx);
+            let active = !ranked.is_empty();
+            self.factory.update_active_candidates(ranked);
+            self.factory.set_assoc_active(active);
+        } else if !step.candidates.is_empty() {
+            let composing = step.composing.text.clone();
             let cands = std::mem::take(&mut step.candidates);
-            if let Ok(ranked) = self.intel.rerank(&prefix, cands) {
+            if let Ok(ranked) = self.intel.rerank(&composing, cands) {
                 self.factory.update_active_candidates(ranked);
             }
         }

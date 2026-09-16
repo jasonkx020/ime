@@ -89,7 +89,7 @@ StrokeBatch
 | 格式（M2.5 Android） | **PaddleOCR** 官方 [ppocr-sdk](https://github.com/PaddlePaddle/PaddleOCR/tree/main/deploy/ppocr-android)（ONNX Runtime **PP-OCRv6_tiny**） |
 | 模型文件 | `det/inference.onnx` + `rec/inference.onnx` + `rec/inference.yml` |
 | 输入 | 笔迹栅格化为白底黑笔 `Bitmap`（约 360px）后 OCR |
-| 候选形态 | OCR 识别串为主（整句 + 分框/分字）；**形近字 top-30 本轮不做** |
+| 候选形态 | **仅汉字**；OCR 主结果 + CTC 备选字（池上限 200，CandBar 分页）；过滤拉丁/数字/其他语种 |
 | 分发 | App `assets/models/ppocr/`；**不进 LangPack**；刷新：`python tools/fetch_ppocr_assets.py` |
 | 体积 | tiny det+rec 合计约 ~6MB（可换 `PP-OCRv6_small`） |
 
@@ -127,7 +127,7 @@ StrokeBatch
 | 候选 | `source = Handwriting`，写入 `ImmSnapshot` |
 | 上屏 | `SelectCandidate` → `UiCommand.Commit` |
 | 清空 | 选词后 `HandwritingService.clear` 当前格 |
-| 拼音 composing | 手写模式 **隐藏** 拼音行，CandBar 仅显示识别候选 |
+| 拼音 composing | 手写模式 **隐藏** 拼音行，CandBar 仅显示识别候选；**选词后离线词表联想**（优先下一字，后缀 ≤2 字，端侧字 bigram 重排，非云 LLM） |
 
 ---
 
@@ -150,12 +150,13 @@ StrokeBatch
 
 ## 9. M2.5 验收清单
 
-> 端侧识别 = **PP-OCRv6_tiny（ONNX / 官方 ppocr-sdk）**（Android）。候选以 OCR 文本为主；形近字 top-30 后续另议。云端仍为 stub，但确认 UI 须闭环。
+> 端侧识别 = **PP-OCRv6_tiny（ONNX / 官方 ppocr-sdk）**（Android）。候选 = **仅汉字**（OCR + CTC 备选，池 ≤200，分页）；独立形近字库后续另议。云端仍为 stub，但确认 UI 须闭环。
 
 - [x] 工具栏「手写」打开 HandwritingPad ≤ 100ms（原生切换）
 - [x] 单字模式抬笔 debounce（450ms）后识别
 - [x] CandBar 展示 OCR 结果（整句/分框/分字），`source=Handwriting`
 - [x] 选词 Commit 上屏并清空书写区
+- [x] 选词后离线词表联想（CandBar 展示后缀，端侧字 bigram 重排，可继续点选）
 - [x] 撤销/清空有效
 - [x] `SwitchScheme(handwriting)` 与工具栏入口行为一致（core）
 - [x] Session 切换 wipe 笔迹缓冲
@@ -165,11 +166,11 @@ StrokeBatch
 
 ### Android 手测建议
 
-1. 普通文本框 → 手写 → 写「你/好/我」→ CandBar 合理 → 选词上屏  
+1. 普通文本框 → 手写 → 写「你/好/我」→ CandBar 合理 → 选词上屏 → 联想后缀（如「好」）可点选  
 2. 多笔写「你」中间不停顿 → 不应只出「一」  
 3. 连写两字 →「识别」→ 短语候选；低置信弹云确认  
 4. 密码框 →「手写」灰显不可点  
-5. 返回键盘后拼音正常
+5. 返回键盘后拼音正常；拼音选词后同样出现离线联想
 
 ---
 

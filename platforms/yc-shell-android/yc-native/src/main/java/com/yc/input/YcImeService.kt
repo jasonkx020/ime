@@ -217,22 +217,18 @@ class YcImeService : InputMethodService() {
         }.trim()
 
     private fun ensureZhPack() {
-        val installed = File(filesDir, "langpacks/zh-pack-v1")
-        if (installed.isDirectory && File(installed, "manifest.fb").isFile) {
-            val rc = YcNative.ycCoreSyncLangPacks()
-            Log.i(TAG, "ycCoreSyncLangPacks -> $rc")
-            return
-        }
         val packFile = File(filesDir, "zh-pack-v1.imepack")
         try {
+            // Always refresh from APK assets so lexicon association stays current.
             assets.open("langpacks/zh-pack-v1.imepack").use { input ->
                 packFile.outputStream().use { output -> input.copyTo(output) }
             }
             val rc = YcNative.ycCoreInstallLangpack(packFile.absolutePath)
-            Log.i(TAG, "ycCoreInstallLangpack -> $rc")
+            Log.i(TAG, "ycCoreInstallLangpack -> $rc size=${packFile.length()}")
         } catch (e: Exception) {
             Log.w(TAG, "zh-pack not in assets", e)
-            YcNative.ycCoreSyncLangPacks()
+            val rc = YcNative.ycCoreSyncLangPacks()
+            Log.i(TAG, "ycCoreSyncLangPacks -> $rc")
         }
     }
 
@@ -398,7 +394,13 @@ class YcImeService : InputMethodService() {
         commitToEditor(text)
         stripLeakedPinyin(pinyin, text)
         submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = engineId)
-        clearInputCache()
+        // 选词后保留引擎离线联想候选，勿 ACTION_INIT / clearInputCache
+        skipEditorCommands = true
+        try {
+            refreshUi()
+        } finally {
+            skipEditorCommands = false
+        }
         enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
 
         val before = currentInputConnection?.getTextBeforeCursor(32, 0)
@@ -735,15 +737,15 @@ class YcImeService : InputMethodService() {
     private fun enterEditorDeleteMode(commitSucceeded: Boolean = false) {
         preferEditorDelete = true
         lastComposing = ""
-        lastCandidates = emptyList()
-        lastCandPage = 0
-        lastTotalPages = 0
-        clearCandScrollBuffer()
+        // 保留 lastCandidates：选词后离线词表联想仍需展示在 CandBar
         if (!commitSucceeded && hasComposingRegion()) {
             resolveStaleComposingSpan(composingRegionEnd - composingRegionStart)
         }
         pushCandSnapshot()
-        Log.i(TAG, "enterEditorDeleteMode commitSucceeded=$commitSucceeded")
+        Log.i(
+            TAG,
+            "enterEditorDeleteMode commitSucceeded=$commitSucceeded cands=${lastCandidates.size}",
+        )
     }
 
     private fun commitPinyinAsRawText() {
@@ -867,16 +869,22 @@ class YcImeService : InputMethodService() {
         }
 
         if (skipEditorCommands || preferEditorDelete) {
-            // 拼音上屏后 preferEditorDelete 会吞掉候选；手写态必须继续刷新 CandBar
+            // 选词后：手写 / 拼音均可能带离线联想候选，须写入 CandBar
             val inHw = handwritingActive || panel?.isHandwritingMode() == true
-            if (!inHw) {
-                lastComposing = ""
-                lastCandidates = emptyList()
-                lastCandPage = 0
-                lastTotalPages = 0
-                expandedCandidates.clear()
-            } else {
+            if (inHw || snap.candidates.isNotEmpty()) {
                 applyHwCandFromSnap(snap)
+                if (!inHw) {
+                    lastComposing = ""
+                }
+            } else {
+                // preferEditorDelete 且 snapshot 空：保留已有联想，勿清空 CandBar
+                lastComposing = ""
+                if (!preferEditorDelete || lastCandidates.isEmpty()) {
+                    lastCandidates = emptyList()
+                    lastCandPage = 0
+                    lastTotalPages = 0
+                    expandedCandidates.clear()
+                }
             }
         } else {
             asciiMode = if (handwritingActive) false else snap.asciiMode
@@ -909,8 +917,9 @@ class YcImeService : InputMethodService() {
 
         val inHw = handwritingActive || panel?.isHandwritingMode() == true
         val displayCands = when {
-            skipEditorCommands && !inHw -> emptyList()
-            preferEditorDelete && !inHw -> emptyList()
+            // 选词后若有离线联想，仍展示；仅在无候选时隐藏
+            skipEditorCommands && !inHw && lastCandidates.isEmpty() -> emptyList()
+            preferEditorDelete && !inHw && lastCandidates.isEmpty() -> emptyList()
             asciiMode && !inHw -> emptyList()
             else -> displayCandidates()
         }

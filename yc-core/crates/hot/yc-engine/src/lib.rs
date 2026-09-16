@@ -10,7 +10,7 @@ mod pinyin_seg;
 
 
 
-pub use data_driven::DataDrivenEngine;
+pub use data_driven::{DataDrivenEngine, ASSOC_CANDIDATE_LIMIT};
 
 pub use factory::EngineFactory;
 

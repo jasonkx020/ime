@@ -19,6 +19,7 @@ import android.graphics.Bitmap
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCRConfig
 import com.paddle.ocr.model.ModelConfig
+import com.paddle.ocr.model.OCRBox
 import com.paddle.ocr.model.OCRError
 import com.paddle.ocr.model.OCRResult
 import com.paddle.ocr.postprocess.BoxSorter
@@ -76,21 +77,21 @@ class OCREngine(
     private fun run(srcMat: org.opencv.core.Mat): OCREngineResult {
         val totalStart = System.currentTimeMillis()
         val detResult = detectionEngine.detect(srcMat)
-        val boxes = detResult.boxes
+        var boxes = detResult.boxes
 
+        // Handwriting / single-glyph images often miss DB boxes — fall back to full-frame rec.
         if (boxes.isEmpty()) {
-            val elapsed = System.currentTimeMillis() - totalStart
-            return OCREngineResult(
-                results = emptyList(),
-                detectionTimeMs = detResult.timeMs,
-                recognitionTimeMs = 0,
-                totalTimeMs = elapsed,
-                lineCount = 0,
-                detPreprocessMs = detResult.preprocessMs,
-                detInferenceMs = detResult.inferenceMs,
-                detPostprocessMs = detResult.postprocessMs,
-                detInputShape = detResult.inputShape,
-                coldLoadTimeMs = ortManager.coldLoadTimeMs,
+            val w = srcMat.cols().coerceAtLeast(1).toFloat()
+            val h = srcMat.rows().coerceAtLeast(1).toFloat()
+            boxes = listOf(
+                OCRBox(
+                    listOf(
+                        android.graphics.PointF(0f, 0f),
+                        android.graphics.PointF(w - 1f, 0f),
+                        android.graphics.PointF(w - 1f, h - 1f),
+                        android.graphics.PointF(0f, h - 1f),
+                    ),
+                ),
             )
         }
 
@@ -137,13 +138,14 @@ class OCREngine(
 
                     for (j in batchResult.texts.indices) {
                         val boxIdx = batchBoxIndices[j]
-                        val (text, confidence) = batchResult.texts[j]
-                        if (confidence >= config.recScoreThresh) {
+                        val item = batchResult.texts[j]
+                        if (item.confidence >= config.recScoreThresh) {
                             allResults.add(
                                 OCRResult(
                                     box = sortedBoxes[boxIdx],
-                                    text = text,
-                                    confidence = confidence,
+                                    text = item.text,
+                                    confidence = item.confidence,
+                                    alternatives = item.alternatives,
                                 )
                             )
                         }

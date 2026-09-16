@@ -251,7 +251,7 @@ pub extern "C" fn yc_hw_apply_result(
     ffi_guard(|| {
         use yc_types::{YC_ERR_BUSY, YC_ERR_INTERNAL, YC_ERR_SESSION, YC_OK};
 
-        if count == 0 || count > 30 {
+        if count == 0 || count > 200 {
             return YC_ERR_INTERNAL;
         }
         if texts.is_null() || scores.is_null() || texts_bytes == 0 {

@@ -23,7 +23,7 @@ class RecognitionEngine(
     private val characterList: List<String>,
 ) {
     data class RecognitionResult(
-        val texts: List<Pair<String, Float>>,
+        val texts: List<CTCDecoder.DecodeItem>,
         val preprocessMs: Long,
         val inferenceMs: Long,
         val postprocessMs: Long,
@@ -42,7 +42,7 @@ class RecognitionEngine(
         val (outputData, outputShape) = ortManager.runRecognition(preResult.tensorData, preResult.shape)
         val inferenceMs = System.currentTimeMillis() - infStart
 
-        // Postprocess (CTC decode)
+        // Postprocess (CTC decode + alternatives)
         val postStart = System.currentTimeMillis()
         val decoded = CTCDecoder.decode(outputData, outputShape, characterList)
         val postprocessMs = System.currentTimeMillis() - postStart

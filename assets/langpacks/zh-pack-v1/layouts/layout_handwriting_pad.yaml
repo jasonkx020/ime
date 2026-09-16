@@ -2,6 +2,9 @@ layout_id: layout_handwriting_pad
 name: "手写输入"
 layout_type: handwriting_pad
 
+# Empty key grid: Android uses native HandwritingPad (not KeyView rows).
+rows: []
+
 toolbar:
   - { action: mode_single_char, label: "单字" }
   - { action: mode_continuous, label: "连写" }
@@ -16,4 +19,4 @@ canvas:
 footer:
   - { action: dismiss_handwriting, label: "返回键盘", width: 1.0 }
 
-# No rows[]; Android uses native HandwritingPad. ReloadKeyboard layout_id=layout_handwriting.
+# ReloadKeyboard layout_id=layout_handwriting.

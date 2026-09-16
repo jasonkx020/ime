@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use yc_lexicon::UserWordStore;
+use yc_lexicon::{SharedCharNgram, UserWordStore};
 use yc_scheme::SchemeDesc;
 use yc_scheme::TransformKind;
 use yc_types::{
@@ -36,6 +36,7 @@ pub struct EngineFactory {
     active_pack: Option<String>,
     active_editor: EditorId,
     user_words: Arc<Mutex<UserWordStore>>,
+    shared_ngram: SharedCharNgram,
 }
 
 impl EngineFactory {
@@ -45,6 +46,7 @@ impl EngineFactory {
             active_pack: None,
             active_editor: EditorId::NONE,
             user_words: UserWordStore::shared(),
+            shared_ngram: SharedCharNgram::new(),
         }
     }
 
@@ -54,11 +56,16 @@ impl EngineFactory {
             active_pack: None,
             active_editor: EditorId::NONE,
             user_words: store,
+            shared_ngram: SharedCharNgram::new(),
         }
     }
 
     pub fn user_words(&self) -> Arc<Mutex<UserWordStore>> {
         self.user_words.clone()
+    }
+
+    pub fn shared_ngram(&self) -> SharedCharNgram {
+        self.shared_ngram.clone()
     }
 
     pub fn set_user_words_path(&self, path: impl AsRef<Path>) {
@@ -70,8 +77,14 @@ impl EngineFactory {
 
     fn attach_user_words(&self, slot: &mut EngineSlotInner) {
         match slot {
-            EngineSlotInner::Latin(l) => l.set_user_words(self.user_words.clone()),
-            EngineSlotInner::DataDriven(d) => d.set_user_words(self.user_words.clone()),
+            EngineSlotInner::Latin(l) => {
+                l.set_user_words(self.user_words.clone());
+                l.set_shared_ngram(self.shared_ngram.clone());
+            }
+            EngineSlotInner::DataDriven(d) => {
+                d.set_user_words(self.user_words.clone());
+                d.set_shared_ngram(self.shared_ngram.clone());
+            }
         }
     }
 
@@ -304,6 +317,100 @@ impl EngineFactory {
 
     pub fn touch_user_word(&mut self, pinyin: &str, word: &str) {
         self.user_words.lock().touch(pinyin, word);
+    }
+
+    /// Lexicon association suffixes for `prefix`.
+    /// Prefer active engine, then zh DataDriven packs, then any other loaded lexicon.
+    pub fn associate(&mut self, prefix: &str, limit: usize) -> Vec<Candidate> {
+        let primary = self
+            .with_active(|e| {
+                Ok(match e {
+                    EngineSlotInner::Latin(l) => l.associate(prefix, limit),
+                    EngineSlotInner::DataDriven(d) => d.associate(prefix, limit),
+                })
+            })
+            .unwrap_or_default();
+        if !primary.is_empty() {
+            return primary;
+        }
+
+        let mut zh_ids: Vec<String> = self
+            .slots
+            .keys()
+            .filter(|id| id.contains("zh"))
+            .cloned()
+            .collect();
+        zh_ids.sort();
+        for id in zh_ids {
+            if let Some(cands) = self.associate_in_pack(&id, prefix, limit, true) {
+                return cands;
+            }
+        }
+        let mut other_ids: Vec<String> = self
+            .slots
+            .keys()
+            .filter(|id| !id.contains("zh"))
+            .cloned()
+            .collect();
+        other_ids.sort();
+        for id in other_ids {
+            if let Some(cands) = self.associate_in_pack(&id, prefix, limit, false) {
+                return cands;
+            }
+        }
+        Vec::new()
+    }
+
+    fn associate_in_pack(
+        &mut self,
+        pack_id: &str,
+        prefix: &str,
+        limit: usize,
+        data_driven_only: bool,
+    ) -> Option<Vec<Candidate>> {
+        let pack = self.slots.get_mut(pack_id)?;
+        for engine in pack.engines.values_mut() {
+            let cands = match engine {
+                EngineSlotInner::DataDriven(d) => d.associate(prefix, limit),
+                EngineSlotInner::Latin(l) if !data_driven_only => l.associate(prefix, limit),
+                EngineSlotInner::Latin(_) => Vec::new(),
+            };
+            if !cands.is_empty() {
+                return Some(cands);
+            }
+        }
+        None
+    }
+
+    /// Accumulated association context after select (empty when composing).
+    pub fn assoc_context(&mut self) -> String {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::Latin(_) => String::new(),
+                EngineSlotInner::DataDriven(d) => d.assoc_context().to_string(),
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    pub fn clear_assoc_context(&mut self) {
+        let _ = self.with_active(|e| {
+            match e {
+                EngineSlotInner::Latin(_) => {}
+                EngineSlotInner::DataDriven(d) => d.clear_assoc(),
+            }
+            Ok(())
+        });
+    }
+
+    pub fn set_assoc_active(&mut self, active: bool) {
+        let _ = self.with_active(|e| {
+            match e {
+                EngineSlotInner::Latin(_) => {}
+                EngineSlotInner::DataDriven(d) => d.set_assoc_active(active),
+            }
+            Ok(())
+        });
     }
 }
 

@@ -14,9 +14,15 @@ pub fn setup_zh_pack(scheduler: &mut Scheduler) -> String {
     if !root.exists() {
         return String::new();
     }
-    let pack_path = std::env::temp_dir().join(format!("yc_session_zh_{}.imepack", std::process::id()));
+    let uniq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pack_path =
+        std::env::temp_dir().join(format!("yc_session_zh_{}_{}.imepack", std::process::id(), uniq));
     let built = yc_pack::build_langpack_dir(&root, &pack_path).expect("build zh-pack");
-    let data = std::env::temp_dir().join(format!("yc_session_zh_install_{}", std::process::id()));
+    let data =
+        std::env::temp_dir().join(format!("yc_session_zh_install_{}_{}", std::process::id(), uniq));
     let _ = std::fs::remove_dir_all(&data);
     yc_pack::install_pack_to_dir(&pack_path, &data).expect("install zh-pack");
     let install_path = data.join(&built.manifest.id);

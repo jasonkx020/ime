@@ -15,7 +15,6 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     private val candCollapsedH = dp(52)
     private val candExpandedH = dp(140)
     private val keyH = dp(280)
-    private val hwH = dp(240)
 
     private var handwritingMode = false
     private val inputSlotLp: LayoutParams
@@ -28,7 +27,10 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         addView(candBar, candLp)
         addView(toolbar, toolLp)
         addView(keyView, inputSlotLp)
-        addView(handwritingPad, LayoutParams(LayoutParams.MATCH_PARENT, keyH))
+        addView(
+            handwritingPad,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
+        )
         handwritingPad.visibility = View.GONE
         applyTheme(tokens)
     }
@@ -61,7 +63,8 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
             keyView.visibility = View.GONE
             handwritingPad.visibility = View.VISIBLE
             val lp = handwritingPad.layoutParams as LayoutParams
-            lp.height = hwH
+            lp.width = LayoutParams.MATCH_PARENT
+            lp.height = LayoutParams.WRAP_CONTENT
             handwritingPad.layoutParams = lp
         } else {
             handwritingPad.visibility = View.GONE

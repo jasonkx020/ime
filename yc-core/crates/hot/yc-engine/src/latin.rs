@@ -47,6 +47,10 @@ impl LatinPredictEngine {
         self.lexicon.set_user_words(store);
     }
 
+    pub fn set_shared_ngram(&mut self, shared: yc_lexicon::SharedCharNgram) {
+        self.lexicon.set_shared_ngram(shared);
+    }
+
     pub fn set_cand_pool(&mut self, cands: Vec<Candidate>) {
         self.cand_pool = cands;
         self.cand_page = 0;
@@ -78,6 +82,10 @@ impl LatinPredictEngine {
 
     pub fn touch_user_word(&self, pinyin: &str, word: &str) {
         self.lexicon.touch_user_word(pinyin, word);
+    }
+
+    pub fn associate(&self, prefix: &str, limit: usize) -> Vec<Candidate> {
+        self.lexicon.associate(prefix, limit)
     }
 
     fn step_from_pool(&mut self, composing: String) -> EngineStep {

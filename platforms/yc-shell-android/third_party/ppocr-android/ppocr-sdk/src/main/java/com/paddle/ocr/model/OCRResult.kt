@@ -19,4 +19,6 @@ data class OCRResult(
     val text: String,
     val confidence: Float,
     val wordBoxes: List<OCRBox>? = null,
+    /** CTC per-crop character alternatives (score descending). */
+    val alternatives: List<Pair<String, Float>> = emptyList(),
 )
