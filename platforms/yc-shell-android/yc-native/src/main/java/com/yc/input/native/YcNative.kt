@@ -21,6 +21,7 @@ object YcNative {
     const val ACTION_UNDO_HANDWRITING = 11
     const val ACTION_CONFIRM_CLOUD_HW = 12
     const val ACTION_DISMISS_CLOUD_HW = 13
+    const val ACTION_SWITCH_LANG = 14
     const val ACTION_PAGE_NEXT = 15
     const val ACTION_PAGE_PREV = 16
 

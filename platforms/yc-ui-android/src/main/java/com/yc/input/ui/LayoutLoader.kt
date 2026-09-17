@@ -3,6 +3,7 @@ package com.yc.input.ui
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.ZipFile
 
 /** Loads `layouts/{id}.bin` (YCLY) from installed langpacks; falls back to US QWERTY. */
 object LayoutLoader {
@@ -18,7 +19,6 @@ object LayoutLoader {
 
     fun load(dataDir: File, layoutId: String): List<List<KeyDef>> {
         if (isPinyinLayout(layoutId)) {
-            // Prefer built-in full US QWERTY until pack bins are rebuilt with row_break.
             val fromPack = loadFromPack(dataDir, layoutId)
             if (fromPack != null && fromPack.size >= 4) return fromPack
             return Layout26Pinyin.rows
@@ -26,19 +26,47 @@ object LayoutLoader {
         return loadFromPack(dataDir, layoutId) ?: Layout26Pinyin.rows
     }
 
+    /** 仅从语言包加载；找不到返回 null（不做 QWERTY 兜底）。 */
+    fun loadOrNull(dataDir: File, layoutId: String): List<List<KeyDef>>? =
+        loadFromPack(dataDir, layoutId)
+
     private fun isPinyinLayout(layoutId: String): Boolean =
         layoutId == "layout_pinyin26" || layoutId == "layout_26_pinyin"
 
     private fun loadFromPack(dataDir: File, layoutId: String): List<List<KeyDef>>? {
+        // 1) 已解压目录：{dataDir}/langpacks/{packId}/layouts/{id}.bin
         val langpacks = File(dataDir, "langpacks")
-        if (!langpacks.isDirectory) return null
-        for (pack in langpacks.listFiles() ?: emptyArray()) {
-            val bin = File(pack, "layouts/$layoutId.bin")
-            if (bin.isFile) {
-                return parseBin(bin.readBytes())
+        if (langpacks.isDirectory) {
+            for (pack in langpacks.listFiles() ?: emptyArray()) {
+                if (!pack.isDirectory) continue
+                val bin = File(pack, "layouts/$layoutId.bin")
+                if (bin.isFile) {
+                    parseBin(bin.readBytes())?.let { return it }
+                }
+            }
+        }
+        // 2) 回退：直接读 {dataDir}/{packId}.imepack ZIP 内 layouts/{id}.bin
+        //    （安装解压失败或目录尚未同步时仍可出键面）
+        val packs = listOf("zh-pack-v1", "vi-v1", "th-v1")
+        for (packId in packs) {
+            val imepack = File(dataDir, "$packId.imepack")
+            if (!imepack.isFile) continue
+            readBinFromZip(imepack, "layouts/$layoutId.bin")?.let { bytes ->
+                parseBin(bytes)?.let { return it }
             }
         }
         return null
+    }
+
+    private fun readBinFromZip(zipFile: File, entryName: String): ByteArray? {
+        return try {
+            ZipFile(zipFile).use { zip ->
+                val entry = zip.getEntry(entryName) ?: return null
+                zip.getInputStream(entry).use { it.readBytes() }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun parseBin(bytes: ByteArray): List<List<KeyDef>>? {
@@ -74,27 +102,53 @@ object LayoutLoader {
             }
 
             row.add(
-                when (action) {
-                    ACTION_BACKSPACE ->
+                when {
+                    action == ACTION_BACKSPACE ->
                         KeyDef(label.ifEmpty { "⌫" }, width, KeyStyle.Utility, action = KeyAction.Backspace)
-                    ACTION_SHIFT ->
+                    action == ACTION_SHIFT ->
                         KeyDef(label.ifEmpty { "⇧" }, width, KeyStyle.Utility, action = KeyAction.Shift)
-                    ACTION_SWITCH_LAYOUT ->
-                        KeyDef(label.ifEmpty { "!#1" }, width, KeyStyle.Utility, action = KeyAction.Symbol)
-                    ACTION_SWITCH_LANG ->
+                    action == ACTION_SWITCH_LAYOUT -> {
+                        val isBack = label.contains("ABC") || label.contains("手写") ||
+                            label.equals("ABC", true)
+                        if (isBack) {
+                            KeyDef(label.ifEmpty { "ABC" }, width, KeyStyle.Utility, action = KeyAction.Letters)
+                        } else {
+                            KeyDef(label.ifEmpty { "123" }, width, KeyStyle.Utility, action = KeyAction.Symbol)
+                        }
+                    }
+                    action == ACTION_SWITCH_LANG ->
                         KeyDef(label.ifEmpty { "🌐" }, width, KeyStyle.Utility, action = KeyAction.Globe)
+                    output.startsWith("tone:") ->
+                        KeyDef(
+                            label = label.ifEmpty { output.removePrefix("tone:") },
+                            widthWeight = width,
+                            style = KeyStyle.Utility,
+                            action = KeyAction.Tone,
+                            output = output,
+                        )
+                    label == "🎤" || output == "voice" ->
+                        KeyDef(label.ifEmpty { "🎤" }, width, KeyStyle.Utility, action = KeyAction.Mic)
                     else -> {
+                        val isSpace = output == " " || label.contains("空格") ||
+                            label.equals("space", true) || label == "cách" || label == "วรรค"
                         val ch = output.firstOrNull() ?: label.firstOrNull()
-                        val isSpace = output == " " || label.contains("空格")
                         KeyDef(
                             label = label.ifEmpty { output },
                             widthWeight = width,
                             keyCode = ch?.code,
-                            action = if (isSpace) KeyAction.Space else KeyAction.Letter,
-                            style = if (label == "搜索") KeyStyle.Accent else KeyStyle.Normal,
-                        ).let { def ->
-                            if (label == "搜索") def.copy(action = KeyAction.Search) else def
-                        }
+                            action = when {
+                                isSpace -> KeyAction.Space
+                                label == "搜索" || label == "换行" || label == "回车" ||
+                                    label == "下一步" || output == "\n" -> KeyAction.Search
+                                else -> KeyAction.Letter
+                            },
+                            style = when {
+                                label == "搜索" || label == "换行" || label == "下一步" -> KeyStyle.Accent
+                                label == "回车" || isSpace -> KeyStyle.Utility
+                                else -> KeyStyle.Normal
+                            },
+                            output = output.ifEmpty { null },
+                        )
                     }
                 },
             )

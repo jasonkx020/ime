@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 
@@ -13,7 +14,7 @@ class SamsungToolbar @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : View(context, attrs), ToolbarView {
 
-    private var tokens = ThemeTokens()
+    private var tokens = ThemeTokens.light()
     private var onItem: ((String) -> Unit)? = null
     private val items = listOf("设置", "翻译", "剪贴板", "语音", "表情", "手写")
     private val disabled = mutableSetOf<String>()
@@ -70,5 +71,6 @@ class SamsungToolbar @JvmOverloads constructor(
         return true
     }
 
-    private fun sp(v: Float): Float = v * resources.displayMetrics.scaledDensity
+    private fun sp(v: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
 }

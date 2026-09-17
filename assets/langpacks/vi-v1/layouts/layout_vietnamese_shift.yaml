@@ -1,0 +1,50 @@
+layout_id: layout_vietnamese_shift
+name: 越南语标准键盘 Shift
+rows:
+  - - { label: "Ă", output: "Ă", width: 1.0 }
+    - { label: "Â", output: "Â", width: 1.0 }
+    - { label: "Ê", output: "Ê", width: 1.0 }
+    - { label: "Ô", output: "Ô", width: 1.0 }
+    - { label: "Ơ", output: "Ơ", width: 1.0 }
+    - { label: "Ư", output: "Ư", width: 1.0 }
+    - { label: "Đ", output: "Đ", width: 1.0 }
+  - - { label: "Q", output: "Q", width: 1.0 }
+    - { label: "W", output: "W", width: 1.0 }
+    - { label: "E", output: "E", width: 1.0 }
+    - { label: "R", output: "R", width: 1.0 }
+    - { label: "T", output: "T", width: 1.0 }
+    - { label: "Y", output: "Y", width: 1.0 }
+    - { label: "U", output: "U", width: 1.0 }
+    - { label: "I", output: "I", width: 1.0 }
+    - { label: "O", output: "O", width: 1.0 }
+    - { label: "P", output: "P", width: 1.0 }
+  - - { label: "A", output: "A", width: 1.0 }
+    - { label: "S", output: "S", width: 1.0 }
+    - { label: "D", output: "D", width: 1.0 }
+    - { label: "F", output: "F", width: 1.0 }
+    - { label: "G", output: "G", width: 1.0 }
+    - { label: "H", output: "H", width: 1.0 }
+    - { label: "J", output: "J", width: 1.0 }
+    - { label: "K", output: "K", width: 1.0 }
+    - { label: "L", output: "L", width: 1.0 }
+  - - { label: "⇧", action: "shift", width: 1.4 }
+    - { label: "Z", output: "Z", width: 1.0 }
+    - { label: "X", output: "X", width: 1.0 }
+    - { label: "C", output: "C", width: 1.0 }
+    - { label: "V", output: "V", width: 1.0 }
+    - { label: "B", output: "B", width: 1.0 }
+    - { label: "N", output: "N", width: 1.0 }
+    - { label: "M", output: "M", width: 1.0 }
+    - { label: "⌫", action: "backspace", width: 1.4 }
+  - - { label: "´", output: "tone:sac", width: 1.0 }
+    - { label: "`", output: "tone:huyen", width: 1.0 }
+    - { label: "ˇ", output: "tone:hoi", width: 1.0 }
+    - { label: "~", output: "tone:nga", width: 1.0 }
+    - { label: ".", output: "tone:nang", width: 1.0 }
+  - - { label: "123", action: "switch_layout", width: 1.15 }
+    - { label: "🌐", action: "switch_lang", width: 1.15 }
+    - { label: "🎤", output: "voice", width: 1.1 }
+    - { label: "cách", output: " ", width: 3.2 }
+    - { label: ",", output: ",", width: 0.85 }
+    - { label: ".", output: ".", width: 0.85 }
+    - { label: "回车", output: "\n", width: 1.35 }

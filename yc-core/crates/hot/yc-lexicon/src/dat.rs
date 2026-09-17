@@ -148,10 +148,12 @@ impl DatLexicon {
                 };
                 let chars: Vec<char> = word.chars().collect();
                 for &ch in &chars {
-                    *uni.entry(ch).or_default() += freq;
+                    let e = uni.entry(ch).or_default();
+                    *e = (*e).saturating_add(freq);
                 }
                 for w in chars.windows(2) {
-                    *bi.entry((w[0], w[1])).or_default() += freq;
+                    let e = bi.entry((w[0], w[1])).or_default();
+                    *e = (*e).saturating_add(freq);
                 }
                 buckets.entry(first).or_default().push((word, freq));
             }
@@ -210,7 +212,8 @@ impl DatLexicon {
             let Some(next_ch) = suffix.chars().next() else {
                 continue;
             };
-            *next_char_freq.entry(next_ch).or_default() += *freq;
+            let e = next_char_freq.entry(next_ch).or_default();
+            *e = (*e).saturating_add(*freq);
             if suffix_len >= 2 && multi_seen.insert(suffix.clone()) {
                 multi.push((*freq, suffix));
             }
@@ -690,10 +693,47 @@ pub fn clears_assoc_context(text: &str) -> bool {
 }
 
 pub fn normalize_romanized(raw: &str) -> String {
-    raw.chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
-        .collect()
+    normalize_lookup_key(raw)
+}
+
+/// Lexicon / composing lookup key:
+/// - Thai script → keep Thai chars (Kedmanee composing prefix match)
+/// - otherwise → Vietnamese/Latin diacritic strip to ASCII
+pub fn normalize_lookup_key(raw: &str) -> String {
+    let s = raw.trim();
+    if s.chars().any(is_thai_char) {
+        s.chars().filter(|&c| is_thai_char(c)).collect()
+    } else {
+        romanize_latin(s)
+    }
+}
+
+fn is_thai_char(c: char) -> bool {
+    matches!(c, '\u{0E00}'..='\u{0E7F}')
+}
+
+/// Strip Vietnamese (and generic Latin) diacritics to ASCII letters for lexicon keys.
+/// `đ/Đ` → `d`; combining tones removed via base-letter map; non-letters dropped.
+pub fn romanize_latin(raw: &str) -> String {
+    raw.chars().filter_map(latin_base_char).collect()
+}
+
+fn latin_base_char(c: char) -> Option<char> {
+    let lower = c.to_lowercase().next().unwrap_or(c);
+    let base = match lower {
+        'a' | 'á' | 'à' | 'ả' | 'ã' | 'ạ' | 'ă' | 'ắ' | 'ằ' | 'ẳ' | 'ẵ' | 'ặ' | 'â' | 'ấ'
+        | 'ầ' | 'ẩ' | 'ẫ' | 'ậ' => 'a',
+        'e' | 'é' | 'è' | 'ẻ' | 'ẽ' | 'ẹ' | 'ê' | 'ế' | 'ề' | 'ể' | 'ễ' | 'ệ' => 'e',
+        'i' | 'í' | 'ì' | 'ỉ' | 'ĩ' | 'ị' => 'i',
+        'o' | 'ó' | 'ò' | 'ỏ' | 'õ' | 'ọ' | 'ô' | 'ố' | 'ồ' | 'ổ' | 'ỗ' | 'ộ' | 'ơ' | 'ớ'
+        | 'ờ' | 'ở' | 'ỡ' | 'ợ' => 'o',
+        'u' | 'ú' | 'ù' | 'ủ' | 'ũ' | 'ụ' | 'ư' | 'ứ' | 'ừ' | 'ử' | 'ữ' | 'ự' => 'u',
+        'y' | 'ý' | 'ỳ' | 'ỷ' | 'ỹ' | 'ỵ' => 'y',
+        'd' | 'đ' => 'd',
+        c if c.is_ascii_alphanumeric() => c,
+        _ => return None,
+    };
+    Some(base)
 }
 
 pub fn compile_tsv_to_dat(path: &Path) -> Result<Vec<u8>, String> {
@@ -810,6 +850,21 @@ mod tests {
         }
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../../../assets/langpacks/zh-pack-v1/lexicon/zh_words.sample.tsv")
+    }
+
+    #[test]
+    fn romanize_latin_vi_diacritics() {
+        assert_eq!(romanize_latin("xin chào"), "xinchao");
+        assert_eq!(romanize_latin("Đà Nẵng"), "danang");
+        assert_eq!(romanize_latin("ưở"), "uo");
+        assert_eq!(normalize_romanized("Xin Chào"), "xinchao");
+    }
+
+    #[test]
+    fn normalize_lookup_key_keeps_thai() {
+        assert_eq!(normalize_lookup_key("สวัสดี"), "สวัสดี");
+        assert_eq!(normalize_lookup_key("  ไทย  "), "ไทย");
+        assert_eq!(normalize_lookup_key("xin chào"), "xinchao");
     }
 
     #[test]

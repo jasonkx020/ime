@@ -1,19 +1,21 @@
 id = "vi-v1"
-version = 1
+version = 3
 min_host_version = "0.1.0"
 lang = "vi"
 display_name = "Tiếng Việt"
 
+# 默认：Windows 标准越语键面 + 罗马化前缀查词（latin_predict）
 [[schemes]]
 id = "latin"
-name = "Latin predict"
-default_layout_id = "layout_qwerty"
+name = "Vietnamese predict"
+default_layout_id = "layout_vietnamese"
 file = "schemes/vi_latin.yaml"
 
+# Telex 规则链（后续扩展；当前 UI 不切换到此 scheme）
 [[schemes]]
 id = "telex"
 name = "Telex"
-default_layout_id = "layout_qwerty"
+default_layout_id = "layout_vietnamese"
 file = "schemes/vi_telex.yaml"
 
 [lexicon]

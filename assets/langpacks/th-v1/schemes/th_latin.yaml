@@ -1,0 +1,10 @@
+# Thai predict — Kedmanee keyboard + Thai-script prefix lexicon lookup.
+# Composing is Unicode Thai; lookup key keeps Thai chars (not Latin romanization).
+scheme_id: latin
+lang: th
+alphabet: "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮะัาำิีึืุูเแโใไๅๆ็่้๊๋์ํ๎"
+transform:
+  type: latin_predict
+
+candidate:
+  sources: [lexicon, user, hot]

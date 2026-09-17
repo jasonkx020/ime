@@ -1,6 +1,8 @@
-scheme_id: vi_latin
+# Vietnamese predict — Windows keyboard (special letters + tone bar) + romanized lexicon lookup.
+# Composing may contain Unicode Vietnamese letters; engine strips tones for DAT key match.
+scheme_id: latin
 lang: vi
-alphabet: "abcdefghijklmnopqrstuvwxyz"
+alphabet: "abcdefghijklmnopqrstuvwxyzăâêôơưđ"
 transform:
   type: latin_predict
 

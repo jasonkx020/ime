@@ -1,13 +1,15 @@
 id = "th-v1"
-version = 1
+version = 2
 min_host_version = "0.1.0"
 lang = "th"
 display_name = "ภาษาไทย"
 
+# 默认：Kedmanee 泰语键面 + 泰文前缀查词（latin_predict）
 [[schemes]]
 id = "latin"
-name = "Latin predict"
-default_layout_id = "layout_qwerty"
+name = "Thai predict"
+default_layout_id = "layout_thai"
+file = "schemes/th_latin.yaml"
 
 [lexicon]
 file = "lexicon/th_words.tsv"

@@ -1,3 +1,5 @@
+# Telex rule-chain scheme — reserved for later UI switch.
+# Current Android default is schemes/vi_latin.yaml (Windows keyboard + romanized lookup).
 scheme_id: vi_telex
 lang: vi
 transform:

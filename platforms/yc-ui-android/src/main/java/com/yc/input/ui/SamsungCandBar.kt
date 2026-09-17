@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -13,12 +14,13 @@ import android.widget.OverScroller
 import kotlin.math.abs
 import kotlin.math.max
 
+/** 顶栏候选：单行横滑，按引擎顺序合并字/词。 */
 class SamsungCandBar @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs), CandBar {
 
-    private var tokens = ThemeTokens()
+    private var tokens = ThemeTokens.light()
     private var snapshot = KeyboardSnapshot(0, 0, "", emptyList())
     private var onCandidate: ((CandidateItem) -> Unit)? = null
     private var onPage: ((Int) -> Unit)? = null
@@ -55,7 +57,6 @@ class SamsungCandBar @JvmOverloads constructor(
             (!snapshot.expanded && prev.expanded) ||
             snapshot.candidates.isEmpty()
         ) {
-            // 新拼音 / 收起 / 清空：复位滚动；追加候选时保留偏移
             if (snapshot.composing != prev.composing || snapshot.candidates.isEmpty()) {
                 abortScroll()
                 scrollOffset = 0f
@@ -66,7 +67,6 @@ class SamsungCandBar @JvmOverloads constructor(
             scrollOffset = 0f
             needMoreSent = false
         } else if (snapshot.candidates.size > prev.candidates.size) {
-            // 追加后允许再次触底加载
             needMoreSent = false
             clampScroll()
         }
@@ -93,9 +93,14 @@ class SamsungCandBar @JvmOverloads constructor(
         snapshot.totalPages > 1 && snapshot.candPage + 1 < snapshot.totalPages
 
     private fun showMoreChip(): Boolean =
-        snapshot.totalPages > 1 && !snapshot.expanded
+        snapshot.candidates.isNotEmpty() && !snapshot.expanded
 
-    private fun maxScroll(): Float = max(0f, contentWidth - width + chipsOriginX)
+    private fun moreReserve(): Float = if (showMoreChip()) dp(36f) else 0f
+
+    private fun maxScroll(): Float {
+        val visible = (width - moreReserve()).coerceAtLeast(1f)
+        return max(0f, contentWidth - visible + chipsOriginX)
+    }
 
     private fun clampScroll() {
         scrollOffset = scrollOffset.coerceIn(0f, maxScroll())
@@ -134,113 +139,74 @@ class SamsungCandBar @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(tokens.keyboardBg)
         chipBounds.clear()
         moreChipBounds = null
 
-        val pad = dp(10f)
-        val top = dp(8f)
-        val bot = height - dp(8f)
-        val cy = height / 2f
-        var x = pad
-        chipsOriginX = pad
-
-        if (!snapshot.expanded && snapshot.composing.isNotEmpty()) {
-            paint.color = tokens.composingText
-            paint.textSize = sp(13f)
-            paint.textAlign = Paint.Align.LEFT
-            canvas.drawText(
-                snapshot.composing,
-                x,
-                cy - (paint.descent() + paint.ascent()) / 2,
-                paint,
-            )
-            x += paint.measureText(snapshot.composing) + dp(12f)
-            chipsOriginX = x
-        } else if (!snapshot.expanded && snapshot.asciiMode) {
-            paint.color = tokens.composingText
-            paint.textSize = sp(13f)
-            paint.textAlign = Paint.Align.LEFT
-            canvas.drawText(
-                "EN",
-                x,
-                cy - (paint.descent() + paint.ascent()) / 2,
-                paint,
-            )
-            x += paint.measureText("EN") + dp(12f)
-            chipsOriginX = x
-        }
+        val padX = dp(4f)
+        chipsOriginX = padX
+        val rowTop = dp(4f)
+        val rowBot = (height - dp(4f)).coerceAtLeast(rowTop + dp(28f))
+        val moreReserve = moreReserve()
+        val clipRight = width - moreReserve
 
         val save = canvas.save()
-        if (!snapshot.expanded) {
-            canvas.clipRect(chipsOriginX, 0f, width.toFloat(), height.toFloat())
-        }
+        canvas.clipRect(0f, 0f, clipRight, height.toFloat())
 
-        var chipX = chipsOriginX - scrollOffset
-        paint.textSize = sp(tokens.candFontSp)
+        var x = padX - scrollOffset
         for (cand in snapshot.candidates) {
-            chipX = drawChip(canvas, cand, chipX, top, bot, cy)
+            x = drawPlain(canvas, cand, x, rowTop, rowBot)
         }
+        canvas.restoreToCount(save)
+        contentWidth = x + scrollOffset - padX + padX
 
         if (showMoreChip()) {
-            moreChipBounds = drawLabelChip(canvas, "…", chipX, top, bot, cy)
-            chipX = moreChipBounds!!.right + dp(6f)
+            moreChipBounds = drawMoreAt(
+                canvas,
+                width - moreReserve + dp(2f),
+                rowTop,
+                rowBot,
+            )
         }
-
-        canvas.restoreToCount(save)
-
-        // contentWidth = 芯片区总宽（不含左侧固定 composing）
-        contentWidth = chipX + scrollOffset - chipsOriginX + pad
         clampScroll()
     }
 
-    private fun drawChip(
+    private fun drawPlain(
         canvas: Canvas,
         cand: CandidateItem,
         startX: Float,
         top: Float,
         bot: Float,
-        cy: Float,
     ): Float {
-        val tw = paint.measureText(cand.text)
-        val chipW = max(dp(36f), tw + dp(20f))
-        val rect = RectF(startX, top, startX + chipW, bot)
-        fillChip(canvas, rect, cand.text, cy)
-        chipBounds.add(cand to RectF(rect))
-        return startX + chipW + dp(6f)
-    }
-
-    private fun drawLabelChip(
-        canvas: Canvas,
-        label: String,
-        startX: Float,
-        top: Float,
-        bot: Float,
-        cy: Float,
-    ): RectF {
-        val tw = paint.measureText(label)
-        val chipW = max(dp(36f), tw + dp(20f))
-        val rect = RectF(startX, top, startX + chipW, bot)
-        fillChip(canvas, rect, label, cy)
-        return rect
-    }
-
-    private fun fillChip(canvas: Canvas, rect: RectF, label: String, cy: Float) {
-        paint.color = tokens.candSelectedBg
-        canvas.drawRoundRect(rect, dp(16f), dp(16f), paint)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(1f)
-        paint.color = tokens.candSelectedBorder
-        canvas.drawRoundRect(rect, dp(16f), dp(16f), paint)
-        paint.style = Paint.Style.FILL
+        paint.textSize = sp(tokens.candFontSp)
+        paint.isFakeBoldText = false
         paint.color = tokens.candText
-        paint.textAlign = Paint.Align.CENTER
+        paint.textAlign = Paint.Align.LEFT
+        val tw = paint.measureText(cand.text)
+        val pad = dp(6f)
+        val rect = RectF(startX, top, startX + tw + pad * 2, bot)
+        val cy = (top + bot) / 2f
         canvas.drawText(
-            label,
-            rect.centerX(),
+            cand.text,
+            startX + pad,
             cy - (paint.descent() + paint.ascent()) / 2,
             paint,
         )
+        chipBounds.add(cand to RectF(rect))
+        return startX + tw + pad * 2 + dp(6f)
+    }
+
+    private fun drawMoreAt(canvas: Canvas, startX: Float, top: Float, bot: Float): RectF {
+        paint.textSize = sp(18f)
+        paint.color = tokens.toolbarText
+        paint.textAlign = Paint.Align.LEFT
+        paint.isFakeBoldText = false
+        val label = "…"
+        val tw = paint.measureText(label)
+        val pad = dp(8f)
+        val rect = RectF(startX, top, startX + tw + pad * 2, bot)
+        val cy = (top + bot) / 2f
+        canvas.drawText(label, startX + pad, cy - (paint.descent() + paint.ascent()) / 2, paint)
+        return rect
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -336,5 +302,6 @@ class SamsungCandBar @JvmOverloads constructor(
     }
 
     private fun dp(v: Float): Float = v * resources.displayMetrics.density
-    private fun sp(v: Float): Float = v * resources.displayMetrics.scaledDensity
+    private fun sp(v: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
 }

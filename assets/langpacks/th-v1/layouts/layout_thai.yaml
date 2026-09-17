@@ -1,0 +1,41 @@
+layout_id: layout_thai
+name: 泰语 Kedmanee
+rows:
+  - - { label: "ๆ", output: "ๆ", width: 1.0 }
+    - { label: "ไ", output: "ไ", width: 1.0 }
+    - { label: "ำ", output: "ำ", width: 1.0 }
+    - { label: "พ", output: "พ", width: 1.0 }
+    - { label: "ะ", output: "ะ", width: 1.0 }
+    - { label: "ั", output: "ั", width: 1.0 }
+    - { label: "ี", output: "ี", width: 1.0 }
+    - { label: "ร", output: "ร", width: 1.0 }
+    - { label: "น", output: "น", width: 1.0 }
+    - { label: "ย", output: "ย", width: 1.0 }
+  - - { label: "บ", output: "บ", width: 1.0 }
+    - { label: "ล", output: "ล", width: 1.0 }
+    - { label: "ฟ", output: "ฟ", width: 1.0 }
+    - { label: "ห", output: "ห", width: 1.0 }
+    - { label: "ก", output: "ก", width: 1.0 }
+    - { label: "ด", output: "ด", width: 1.0 }
+    - { label: "เ", output: "เ", width: 1.0 }
+    - { label: "้", output: "้", width: 1.0 }
+    - { label: "่", output: "่", width: 1.0 }
+    - { label: "า", output: "า", width: 1.0 }
+  - - { label: "⇧", action: "shift", width: 1.4 }
+    - { label: "ส", output: "ส", width: 1.0 }
+    - { label: "ว", output: "ว", width: 1.0 }
+    - { label: "ง", output: "ง", width: 1.0 }
+    - { label: "ผ", output: "ผ", width: 1.0 }
+    - { label: "ป", output: "ป", width: 1.0 }
+    - { label: "แ", output: "แ", width: 1.0 }
+    - { label: "อ", output: "อ", width: 1.0 }
+    - { label: "ิ", output: "ิ", width: 1.0 }
+    - { label: "ื", output: "ื", width: 1.0 }
+    - { label: "⌫", action: "backspace", width: 1.4 }
+  - - { label: "123", action: "switch_layout", width: 1.15 }
+    - { label: "🌐", action: "switch_lang", width: 1.15 }
+    - { label: "🎤", output: "voice", width: 1.1 }
+    - { label: "วรรค", output: " ", width: 3.2 }
+    - { label: ",", output: ",", width: 0.85 }
+    - { label: ".", output: ".", width: 0.85 }
+    - { label: "回车", output: "\n", width: 1.35 }

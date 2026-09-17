@@ -29,10 +29,11 @@ Write-Host "==> Fetch pinyin sources (cached under assets/cache)"
 Ensure-Download $PhraseUrl $PhraseFile
 Ensure-Download $CharUrl $CharFile
 
+# Upstream thunlp/THUOCL data/ files (as of 2026; THUOCL_life.txt removed upstream).
 $ThuoclFiles = @(
-    "THUOCL_life.txt", "THUOCL_IT.txt", "THUOCL_car.txt", "THUOCL_chengyu.txt",
-    "THUOCL_diming.txt", "THUOCL_lishimingren.txt", "THUOCL_poem.txt",
-    "THUOCL_medical.txt", "THUOCL_animal.txt", "THUOCL_food.txt"
+    "THUOCL_IT.txt", "THUOCL_animal.txt", "THUOCL_caijing.txt", "THUOCL_car.txt",
+    "THUOCL_chengyu.txt", "THUOCL_diming.txt", "THUOCL_food.txt", "THUOCL_law.txt",
+    "THUOCL_lishimingren.txt", "THUOCL_medical.txt", "THUOCL_poem.txt"
 )
 foreach ($f in $ThuoclFiles) {
     $dest = Join-Path $ThuoclDir $f

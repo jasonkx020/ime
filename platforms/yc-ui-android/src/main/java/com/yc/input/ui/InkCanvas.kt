@@ -2,9 +2,12 @@ package com.yc.input.ui
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 
@@ -27,7 +30,7 @@ class InkCanvas @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
 
-    private var tokens = ThemeTokens()
+    private var tokens = ThemeTokens.light()
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -38,18 +41,26 @@ class InkCanvas @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = 1f
     }
+    private var dashEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
+    private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+    }
     private val paths = mutableListOf<Pair<Path, Float>>()
     private var currentPath: Path? = null
     private var currentWidth = 6f
     private var currentStroke = mutableListOf<InkPoint>()
     private var onStrokeFinished: ((List<InkPoint>) -> Unit)? = null
+    private var onInkChanged: ((Boolean) -> Unit)? = null
     private var startElapsed = 0L
     private var showGrid = true
+    private var showHint = true
 
     fun applyTheme(tokens: ThemeTokens) {
         this.tokens = tokens
         strokePaint.color = tokens.hwInk
         gridPaint.color = tokens.hwGrid
+        hintPaint.color = tokens.hwHint
+        dashEffect = DashPathEffect(floatArrayOf(dp(4f), dp(4f)), 0f)
         setBackgroundColor(tokens.hwCanvasBg)
         invalidate()
     }
@@ -59,21 +70,37 @@ class InkCanvas @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setShowHint(show: Boolean) {
+        if (showHint == show) return
+        showHint = show
+        invalidate()
+    }
+
+    fun hasInk(): Boolean = paths.isNotEmpty() || currentPath != null
+
     fun setOnStrokeFinished(listener: (List<InkPoint>) -> Unit) {
         onStrokeFinished = listener
+    }
+
+    fun setOnInkChanged(listener: (Boolean) -> Unit) {
+        onInkChanged = listener
     }
 
     fun clearInk() {
         paths.clear()
         currentPath = null
         currentStroke.clear()
+        showHint = true
         invalidate()
+        onInkChanged?.invoke(false)
     }
 
     fun undoLastStroke() {
         if (paths.isNotEmpty()) {
             paths.removeAt(paths.lastIndex)
+            showHint = paths.isEmpty()
             invalidate()
+            onInkChanged?.invoke(paths.isNotEmpty())
         }
     }
 
@@ -81,7 +108,6 @@ class InkCanvas @JvmOverloads constructor(
         super.onDraw(canvas)
         canvas.drawColor(tokens.hwCanvasBg)
         if (showGrid && width > 0 && height > 0) {
-            // 标准正方形书写格：外框 + 田字中线 + 米字虚线感辅助线
             val inset = dp(1f)
             val l = inset
             val t = inset
@@ -89,13 +115,23 @@ class InkCanvas @JvmOverloads constructor(
             val b = height - inset
             val cx = width / 2f
             val cy = height / 2f
-            gridPaint.strokeWidth = dp(1.2f)
-            canvas.drawRect(l, t, r, b, gridPaint)
+            // 田字实线
+            gridPaint.pathEffect = null
+            gridPaint.strokeWidth = dp(1f)
             canvas.drawLine(cx, t, cx, b, gridPaint)
             canvas.drawLine(l, cy, r, cy, gridPaint)
-            gridPaint.strokeWidth = dp(0.8f)
+            // 米字虚线对角
+            gridPaint.pathEffect = dashEffect
+            gridPaint.strokeWidth = dp(1f)
             canvas.drawLine(l, t, r, b, gridPaint)
             canvas.drawLine(r, t, l, b, gridPaint)
+            gridPaint.pathEffect = null
+        }
+        if (showHint && paths.isEmpty() && currentPath == null) {
+            hintPaint.textSize = sp(14f)
+            hintPaint.color = tokens.hwHint
+            val cy = height / 2f - (hintPaint.descent() + hintPaint.ascent()) / 2
+            canvas.drawText("请在此处写字", width / 2f, cy, hintPaint)
         }
         for ((p, w) in paths) {
             strokePaint.strokeWidth = w
@@ -112,7 +148,7 @@ class InkCanvas @JvmOverloads constructor(
         val h = height.coerceAtLeast(1).toFloat()
         val x = event.x.coerceIn(0f, w)
         val y = event.y.coerceIn(0f, h)
-        val t = android.os.SystemClock.uptimeMillis()
+        val t = SystemClock.uptimeMillis()
         val pressure = if (event.pressure > 0f) event.pressure.coerceIn(0.05f, 1f) else 1f
         val strokeW = 3f + 10f * pressure
         when (event.actionMasked) {
@@ -127,6 +163,10 @@ class InkCanvas @JvmOverloads constructor(
                     it.moveTo(x, y)
                     paths.add(it to currentWidth)
                 }
+                if (showHint) {
+                    showHint = false
+                    onInkChanged?.invoke(true)
+                }
                 invalidate()
                 return true
             }
@@ -135,7 +175,6 @@ class InkCanvas @JvmOverloads constructor(
                 currentStroke.add(pt)
                 currentWidth = (currentWidth + strokeW) / 2f
                 currentPath?.lineTo(x, y)
-                // refresh width on last path entry
                 if (paths.isNotEmpty() && currentPath != null) {
                     paths[paths.lastIndex] = currentPath!! to currentWidth
                 }
@@ -160,4 +199,6 @@ class InkCanvas @JvmOverloads constructor(
     }
 
     private fun dp(v: Float): Float = v * resources.displayMetrics.density
+    private fun sp(v: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
 }

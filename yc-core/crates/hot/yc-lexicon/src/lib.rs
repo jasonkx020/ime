@@ -5,9 +5,10 @@ mod pinyin_match;
 mod user_words;
 
 pub use dat::{
-    clears_assoc_context, compile_merged_tsv, compile_tsv_to_dat, normalize_romanized, CharNgramModel,
-    DatLexicon, LexiconManager, SharedCharNgram, ASSOC_MAX_SUFFIX_CHARS, LEXICON_MAGIC,
-    LEXICON_VERSION,
+    clears_assoc_context, compile_merged_tsv, compile_tsv_to_dat, normalize_lookup_key,
+    normalize_romanized, romanize_latin,
+    CharNgramModel, DatLexicon, LexiconManager, SharedCharNgram, ASSOC_MAX_SUFFIX_CHARS,
+    LEXICON_MAGIC, LEXICON_VERSION,
 };
 pub use pinyin_match::{
     is_complete_syllable, is_valid_pinyin_input, is_valid_prefix, key_matches_composing,

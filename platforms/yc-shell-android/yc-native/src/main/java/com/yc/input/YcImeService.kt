@@ -19,7 +19,9 @@ import com.yc.input.ui.HandwritingPad
 import com.yc.input.ui.KeyAction
 import com.yc.input.ui.KeyDef
 import com.yc.input.ui.KeyboardSnapshot
+import com.yc.input.ui.LangOption
 import com.yc.input.ui.LayoutLoader
+import com.yc.input.ui.ModeOption
 import com.yc.input.ui.YcKeyboardPanel
 import java.io.File
 import java.util.concurrent.Executors
@@ -49,6 +51,13 @@ class YcImeService : InputMethodService() {
     private var panel: YcKeyboardPanel? = null
     private var coreInited = false
     private var currentLayoutId: String = "layout_pinyin26"
+    /** 当前输入语言：zh / en / vi / th（en 为 zh 包 ascii） */
+    private var currentLangCode: String = "zh"
+    /** 符号层返回目标：letters | handwriting */
+    private var numberLayerSource: String = "letters"
+    /** 进入符号层前的字母布局 id */
+    private var letterLayoutId: String = "layout_pinyin26"
+    private var currentModeId: String = "pinyin"
 
     /** 选词后 shell 已上屏，refreshUi 跳过 Commit/discard */
     private var skipEditorCommands = false
@@ -79,7 +88,7 @@ class YcImeService : InputMethodService() {
             coreInited = rc == YcNative.OK
             Log.i(TAG, "ycCoreInit -> $rc")
             if (coreInited) {
-                ensureZhPack()
+                ensureLangPacks()
             }
         }
         hwEngine = PaddleOcrEngine(applicationContext)
@@ -100,14 +109,33 @@ class YcImeService : InputMethodService() {
         kb.setHandwritingUndoListener { onHwUndo() }
         kb.setHandwritingClearListener { onHwClear() }
         kb.setHandwritingDismissListener { dismissHandwriting() }
+        kb.setLangPickListener { opt -> onLangPicked(opt) }
+        kb.setModePickListener { opt -> onModePicked(opt) }
+        kb.setOnModeClick { onModeButtonClick() }
+        kb.setOnCollapseClick { requestHideSelf(0) }
+        kb.setOnAiChipClick { chip -> Log.i(TAG, "ai chip: $chip") }
+        kb.setKeyDownListener { key -> onKeyDown(key) }
+        kb.setKeyUpListener { key -> onKeyUp(key) }
         reloadLayout(currentLayoutId)
+        updateModeLabel()
+        updateHandwritingToolbar()
         return kb
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        panel?.applyTheme(com.yc.input.ui.ThemeTokens.from(this))
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        panel?.applyTheme(com.yc.input.ui.ThemeTokens.from(this))
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         if (!coreInited) return
-        ensureZhPack()
+        ensureLangPacks()
         if (editorId != 0L) {
             YcNative.ycSessionStop(editorId, 0)
         }
@@ -120,18 +148,20 @@ class YcImeService : InputMethodService() {
         lastCandPage = 0
         lastTotalPages = 0
         asciiMode = false
+        if (currentLangCode == "en") currentLangCode = "zh"
         handwritingActive = false
         hwSessionStrokeId = 0L
         hwStrokes.clear()
         cancelHwDebounce()
         hwPasswordBlocked = isPasswordInputType(inputType)
-        panel?.setToolbarItemEnabled("手写", !hwPasswordBlocked)
+        updateHandwritingToolbar()
         clearCandScrollBuffer()
         skipEditorCommands = false
         preferEditorDelete = false
         composingRegionStart = -1
         composingRegionEnd = -1
         panel?.setHandwritingMode(false)
+        panel?.hideLangPicker()
         submit(YcNative.ACTION_INIT)
         refreshUi()
     }
@@ -210,42 +240,61 @@ class YcImeService : InputMethodService() {
         composingRegionEnd = -1
     }
 
+    /** 安装并启用中/越/泰语言包。 */
+    private fun ensureLangPacks() {
+        for (id in listOf("zh-pack-v1", "vi-v1", "th-v1")) {
+            installPackFromAssets(id)
+        }
+        val rc = YcNative.ycCoreSyncLangPacks()
+        Log.i(TAG, "ycCoreSyncLangPacks -> $rc")
+    }
+
+    private fun installPackFromAssets(packId: String) {
+        val packFile = File(filesDir, "$packId.imepack")
+        try {
+            assets.open("langpacks/$packId.imepack").use { input ->
+                packFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            val rc = YcNative.ycCoreInstallLangpack(packFile.absolutePath)
+            Log.i(TAG, "ycCoreInstallLangpack $packId -> $rc size=${packFile.length()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "$packId not in assets", e)
+        }
+    }
+
     /** 去掉 NUL/替换符/控制字符，避免脏候选上屏后再被误清。 */
     private fun sanitizeCommitText(raw: String): String =
         raw.filter { ch ->
             ch != '\u0000' && ch != '\uFFFD' && !ch.isISOControl()
         }.trim()
 
-    private fun ensureZhPack() {
-        val packFile = File(filesDir, "zh-pack-v1.imepack")
-        try {
-            // Always refresh from APK assets so lexicon association stays current.
-            assets.open("langpacks/zh-pack-v1.imepack").use { input ->
-                packFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            val rc = YcNative.ycCoreInstallLangpack(packFile.absolutePath)
-            Log.i(TAG, "ycCoreInstallLangpack -> $rc size=${packFile.length()}")
-        } catch (e: Exception) {
-            Log.w(TAG, "zh-pack not in assets", e)
-            val rc = YcNative.ycCoreSyncLangPacks()
-            Log.i(TAG, "ycCoreSyncLangPacks -> $rc")
-        }
-    }
-
     private fun hasInputCache(): Boolean =
         lastComposing.isNotEmpty() || lastCandidates.isNotEmpty()
 
+
     private fun onKey(key: KeyDef) {
+        panel?.hideModePanel()
         when (key.action) {
             KeyAction.Backspace -> {
                 handleBackspace()
                 return
             }
             KeyAction.Shift -> {
-                panel?.toggleShift()
+                onShiftKey()
                 return
             }
             KeyAction.Search -> {
+                if ((currentLangCode == "vi" || currentLangCode == "th") && lastComposing.isNotEmpty()) {
+                    // 有候选则选首选；否则上屏 composing
+                    if (lastCandidates.isNotEmpty()) {
+                        onCandidate(lastCandidates.first())
+                    } else {
+                        currentInputConnection?.finishComposingText()
+                        lastComposing = ""
+                        pushCandSnapshot()
+                    }
+                    return
+                }
                 if (lastComposing.isNotEmpty()) {
                     commitPinyinAsRawText()
                 } else {
@@ -254,12 +303,32 @@ class YcImeService : InputMethodService() {
                 return
             }
             KeyAction.Globe -> {
-                submit(YcNative.ACTION_TOGGLE_ASCII)
-                refreshUi()
-                Log.i(TAG, "toggle ascii -> $asciiMode")
+                if (panel?.isLangPickerShowing() == true) {
+                    panel?.hideLangPicker()
+                } else {
+                    panel?.showLangPicker(LANG_OPTIONS, currentLangCode)
+                }
+                return
+            }
+            KeyAction.Tone -> {
+                applyViTone(key.output?.removePrefix("tone:") ?: return)
+                return
+            }
+            KeyAction.Symbol -> {
+                enterSymbolLayer(
+                    if (handwritingActive || panel?.isHandwritingMode() == true) "handwriting" else "letters",
+                )
+                return
+            }
+            KeyAction.Letters -> {
+                exitSymbolLayer()
+                return
+            }
+            KeyAction.Mic -> {
                 return
             }
             KeyAction.Space -> {
+                // th / vi / zh / en：走引擎（latin 空格 = 确认首选或上屏 composing）
                 submit(YcNative.ACTION_KEY_PRESS, key.keyCode ?: ' '.code)
                 val committed = refreshUi()
                 if (committed || !hasInputCache()) {
@@ -270,33 +339,167 @@ class YcImeService : InputMethodService() {
                 return
             }
             KeyAction.Letter -> {
+                if (key.output == "half") {
+                    Log.i(TAG, "symbol half page (stub)")
+                    return
+                }
                 preferEditorDelete = false
-                val code = key.keyCode ?: return
-                if (isEngineLetter(code) || (asciiMode && isAsciiComposable(code))) {
-                    // 继续输入拼音时收起展开面板，避免跨查询混页
-                    if (candExpanded) collapseCandExpand()
-                    if (isEngineLetter(code)) {
-                        submit(YcNative.ACTION_KEY_PRESS, code)
+                val text = key.output?.takeIf { it.isNotEmpty() && !it.startsWith("tone:") }
+                    ?: key.label
+                when (currentLangCode) {
+                    "th", "vi" -> {
+                        // 泰文 Kedmanee / 越语专用字母与 a–z 一律喂引擎（Unicode code point）
+                        if (candExpanded) collapseCandExpand()
+                        for (ch in text) {
+                            if (!ch.isISOControl()) {
+                                submit(YcNative.ACTION_KEY_PRESS, ch.code)
+                            }
+                        }
                         refreshUi()
-                    } else {
-                        // ASCII 标点：直通上屏（保留英文 composing）
-                        currentInputConnection?.commitText(code.toChar().toString(), 1)
                     }
-                } else {
-                    if (hasInputCache()) {
-                        discardComposing()
-                        clearInputCache()
+                    else -> {
+                        val code = key.keyCode ?: text.firstOrNull()?.code ?: return
+                        if (isEngineLetter(code) || (asciiMode && isAsciiComposable(code))) {
+                            if (candExpanded) collapseCandExpand()
+                            if (isEngineLetter(code)) {
+                                submit(YcNative.ACTION_KEY_PRESS, code)
+                                refreshUi()
+                            } else {
+                                currentInputConnection?.commitText(code.toChar().toString(), 1)
+                            }
+                        } else {
+                            if (hasInputCache()) {
+                                discardComposing()
+                                clearInputCache()
+                            }
+                            currentInputConnection?.commitText(text, 1)
+                        }
                     }
-                    currentInputConnection?.commitText(code.toChar().toString(), 1)
                 }
-                if (panel?.isShifted() == true) {
-                    panel?.setShifted(false)
-                }
+                panel?.consumeOnceShiftIfNeeded()
                 return
             }
-            else -> Log.i(TAG, "key stub: ${key.label}")
         }
-        refreshUi()
+    }
+
+    private fun onShiftKey() {
+        when (currentLangCode) {
+            "zh" -> onLangPicked(LANG_OPTIONS.first { it.code == "en" })
+            else -> panel?.cycleShift()
+        }
+    }
+
+    private fun enterSymbolLayer(source: String) {
+        numberLayerSource = source
+        if (panel?.isInSymbolLayer() != true) {
+            letterLayoutId = currentLayoutId
+        }
+        if (source == "handwriting" && (handwritingActive || panel?.isHandwritingMode() == true)) {
+            panel?.setHandwritingMode(false)
+            handwritingActive = false
+        }
+        val back = if (source == "handwriting" && allowsHandwriting()) "手写" else "ABC"
+        val packSymbol = LayoutLoader.loadOrNull(filesDir, "layout_symbol")
+        if (packSymbol != null && packSymbol.size >= 4) {
+            val patched = packSymbol.map { row ->
+                row.map { key ->
+                    if (key.action == KeyAction.Letters) key.copy(label = back) else key
+                }
+            }
+            panel?.setUseZhPunct(currentLangCode == "zh")
+            panel?.setLayoutRows(patched, null, "layout_symbol", -1)
+        } else {
+            panel?.showSymbolLayer(back)
+        }
+        currentLayoutId = "layout_symbol"
+        Log.i(TAG, "enterSymbolLayer source=$source")
+    }
+
+    private fun exitSymbolLayer() {
+        if (numberLayerSource == "handwriting" && allowsHandwriting()) {
+            openHandwriting()
+        } else {
+            val id = letterLayoutId.ifEmpty { "layout_pinyin26" }
+            reloadLayout(id)
+        }
+        numberLayerSource = "letters"
+        Log.i(TAG, "exitSymbolLayer -> $currentLayoutId")
+    }
+
+    private fun onKeyDown(key: KeyDef) {
+        if (key.action == KeyAction.Mic) {
+            val name = LANG_OPTIONS.firstOrNull { it.code == currentLangCode }?.name ?: "中文"
+            panel?.showVoiceOverlay(name)
+        }
+    }
+
+    private fun onKeyUp(key: KeyDef) {
+        if (key.action == KeyAction.Mic && panel?.isVoiceOverlayShowing() == true) {
+            panel?.setVoiceRecognizing()
+            hwHandler.postDelayed({
+                panel?.hideVoiceOverlay()
+                val demo = when (currentLangCode) {
+                    "en" -> "Hello"
+                    "vi" -> "Xin chào"
+                    "th" -> "สวัสดี"
+                    else -> "你好"
+                }
+                commitToEditor(demo)
+                Log.i(TAG, "voice stub commit '$demo'")
+            }, 400)
+        }
+    }
+
+    private fun onModeButtonClick() {
+        val modes = modesForLang(currentLangCode)
+        if (modes.size <= 1) {
+            panel?.hideModePanel()
+            return
+        }
+        if (panel?.isModePanelShowing() == true) {
+            panel?.hideModePanel()
+        } else {
+            panel?.showModePanel(modes, currentModeId)
+        }
+    }
+
+    private fun onModePicked(opt: ModeOption) {
+        currentModeId = opt.id
+        when (opt.id) {
+            "handwriting" -> {
+                if (allowsHandwriting()) openHandwriting()
+            }
+            else -> {
+                if (handwritingActive || panel?.isHandwritingMode() == true) {
+                    dismissHandwriting()
+                }
+                reloadLayout(letterLayoutId.ifEmpty { currentLayoutId })
+            }
+        }
+        updateModeLabel()
+    }
+
+    private fun modesForLang(code: String): List<ModeOption> = when (code) {
+        "zh" -> listOf(
+            ModeOption("pinyin", "拼音", "⌨️"),
+            ModeOption("handwriting", "手写", "✍️"),
+        )
+        else -> listOf(ModeOption("keyboard", "键盘", "⌨️"))
+    }
+
+    private fun updateModeLabel() {
+        val label = when {
+            handwritingActive || panel?.isHandwritingMode() == true -> "手写"
+            currentLangCode == "zh" -> "拼音"
+            else -> "键盘"
+        }
+        currentModeId = when {
+            label == "手写" -> "handwriting"
+            currentLangCode == "zh" -> "pinyin"
+            else -> "keyboard"
+        }
+        panel?.setModeLabel(label)
+        panel?.setUseZhPunct(currentLangCode == "zh")
     }
 
     private fun isAsciiComposable(code: Int): Boolean {
@@ -381,6 +584,10 @@ class YcImeService : InputMethodService() {
                 skipEditorCommands = false
             }
             enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
+            if (candExpanded) {
+                collapseCandExpand()
+                pushCandSnapshot()
+            }
             return
         }
 
@@ -403,6 +610,11 @@ class YcImeService : InputMethodService() {
         }
         enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
 
+        if (candExpanded) {
+            collapseCandExpand()
+            pushCandSnapshot()
+        }
+
         val before = currentInputConnection?.getTextBeforeCursor(32, 0)
         Log.i(
             TAG,
@@ -413,13 +625,24 @@ class YcImeService : InputMethodService() {
     private fun onToolbar(item: String) {
         when (item) {
             "手写" -> {
-                if (hwPasswordBlocked) {
-                    Log.w(TAG, "handwriting disabled for password field")
+                if (hwPasswordBlocked || !allowsHandwriting()) {
+                    Log.w(TAG, "handwriting disabled lang=$currentLangCode password=$hwPasswordBlocked")
                     return
                 }
                 openHandwriting()
             }
             else -> Log.i(TAG, "toolbar: $item")
+        }
+    }
+
+    private fun allowsHandwriting(): Boolean =
+        currentLangCode == "zh" && !asciiMode
+
+    private fun updateHandwritingToolbar() {
+        val allow = allowsHandwriting() && !hwPasswordBlocked
+        panel?.setToolbarItemEnabled("手写", allow)
+        if (!allow && (handwritingActive || panel?.isHandwritingMode() == true)) {
+            dismissHandwriting()
         }
     }
 
@@ -439,6 +662,10 @@ class YcImeService : InputMethodService() {
 
     private fun openHandwriting() {
         if (editorId == 0L) return
+        if (!allowsHandwriting() || hwPasswordBlocked) {
+            Log.w(TAG, "openHandwriting blocked lang=$currentLangCode")
+            return
+        }
         clientSeq++
         val rc = YcNative.ycHotSubmit(
             YcNative.buildAction(
@@ -464,6 +691,7 @@ class YcImeService : InputMethodService() {
         hwStrokes.clear()
         preferEditorDelete = false
         skipEditorCommands = false
+        updateModeLabel()
         // Preload on background; avoid runBlocking on UI thread.
         hwExecutor.execute { hwEngine?.ensureLoaded() }
     }
@@ -477,6 +705,7 @@ class YcImeService : InputMethodService() {
         panel?.setHandwritingMode(false)
         handwritingActive = false
         hwSessionStrokeId = 0L
+        updateModeLabel()
         hwStrokes.clear()
         Log.i(TAG, "handwriting dismissed")
     }
@@ -631,6 +860,56 @@ class YcImeService : InputMethodService() {
         private const val HW_SINGLE_DEBOUNCE_MS = 450L
         private const val HW_CONTINUOUS_IDLE_MS = 800L
         private const val HW_RECOGNIZE_TIMEOUT_MS = 2500L
+
+        private val LANG_OPTIONS = listOf(
+            LangOption("zh", "中文", "中文", "zh-pack-v1"),
+            LangOption("en", "英语", "English", "zh-pack-v1", ascii = true),
+            LangOption("vi", "越南语", "Tiếng Việt", "vi-v1"),
+            LangOption("th", "泰语", "ไทย", "th-v1"),
+        )
+
+        /** 与参考效果.html VI_TONE_MAP 一致 */
+        private val VI_TONE_MAP: Map<String, Map<Char, Char>> = mapOf(
+            "sac" to mapOf(
+                'a' to 'á', 'ă' to 'ắ', 'â' to 'ấ', 'e' to 'é', 'ê' to 'ế', 'i' to 'í',
+                'o' to 'ó', 'ô' to 'ố', 'ơ' to 'ớ', 'u' to 'ú', 'ư' to 'ứ', 'y' to 'ý',
+                'A' to 'Á', 'Ă' to 'Ắ', 'Â' to 'Ấ', 'E' to 'É', 'Ê' to 'Ế', 'I' to 'Í',
+                'O' to 'Ó', 'Ô' to 'Ố', 'Ơ' to 'Ớ', 'U' to 'Ú', 'Ư' to 'Ứ', 'Y' to 'Ý',
+            ),
+            "huyen" to mapOf(
+                'a' to 'à', 'ă' to 'ằ', 'â' to 'ầ', 'e' to 'è', 'ê' to 'ề', 'i' to 'ì',
+                'o' to 'ò', 'ô' to 'ồ', 'ơ' to 'ờ', 'u' to 'ù', 'ư' to 'ừ', 'y' to 'ỳ',
+                'A' to 'À', 'Ă' to 'Ằ', 'Â' to 'Ầ', 'E' to 'È', 'Ê' to 'Ề', 'I' to 'Ì',
+                'O' to 'Ò', 'Ô' to 'Ồ', 'Ơ' to 'Ờ', 'U' to 'Ù', 'Ư' to 'Ừ', 'Y' to 'Ỳ',
+            ),
+            "hoi" to mapOf(
+                'a' to 'ả', 'ă' to 'ẳ', 'â' to 'ẩ', 'e' to 'ẻ', 'ê' to 'ể', 'i' to 'ỉ',
+                'o' to 'ỏ', 'ô' to 'ổ', 'ơ' to 'ở', 'u' to 'ủ', 'ư' to 'ử', 'y' to 'ỷ',
+                'A' to 'Ả', 'Ă' to 'Ẳ', 'Â' to 'Ẩ', 'E' to 'Ẻ', 'Ê' to 'Ể', 'I' to 'Ỉ',
+                'O' to 'Ỏ', 'Ô' to 'Ổ', 'Ơ' to 'Ở', 'U' to 'Ủ', 'Ư' to 'Ử', 'Y' to 'Ỷ',
+            ),
+            "nga" to mapOf(
+                'a' to 'ã', 'ă' to 'ẵ', 'â' to 'ẫ', 'e' to 'ẽ', 'ê' to 'ễ', 'i' to 'ĩ',
+                'o' to 'õ', 'ô' to 'ỗ', 'ơ' to 'ỡ', 'u' to 'ũ', 'ư' to 'ữ', 'y' to 'ỹ',
+                'A' to 'Ã', 'Ă' to 'Ẵ', 'Â' to 'Ẫ', 'E' to 'Ẽ', 'Ê' to 'Ễ', 'I' to 'Ĩ',
+                'O' to 'Õ', 'Ô' to 'Ỗ', 'Ơ' to 'Ỡ', 'U' to 'Ũ', 'Ư' to 'Ữ', 'Y' to 'Ỹ',
+            ),
+            "nang" to mapOf(
+                'a' to 'ạ', 'ă' to 'ặ', 'â' to 'ậ', 'e' to 'ẹ', 'ê' to 'ệ', 'i' to 'ị',
+                'o' to 'ọ', 'ô' to 'ộ', 'ơ' to 'ợ', 'u' to 'ụ', 'ư' to 'ự', 'y' to 'ỵ',
+                'A' to 'Ạ', 'Ă' to 'Ặ', 'Â' to 'Ậ', 'E' to 'Ẹ', 'Ê' to 'Ệ', 'I' to 'Ị',
+                'O' to 'Ọ', 'Ô' to 'Ộ', 'Ơ' to 'Ợ', 'U' to 'Ụ', 'Ư' to 'Ự', 'Y' to 'Ỵ',
+            ),
+        )
+
+        /** 与 yc-session hash_pack_id 一致：wrapping mul31（按 Int 位型等同 u32）。 */
+        fun hashPackId(id: String): Int {
+            var h = 0
+            for (b in id.toByteArray(Charsets.UTF_8)) {
+                h = h * 31 + (b.toInt() and 0xff)
+            }
+            return h
+        }
     }
 
     private fun onCandPage(delta: Int) {
@@ -652,7 +931,7 @@ class YcImeService : InputMethodService() {
             pushCandSnapshot()
             return
         }
-        if (lastTotalPages <= 1 && lastCandidates.isEmpty()) return
+        if (lastCandidates.isEmpty() && expandedCandidates.isEmpty()) return
         candExpanded = true
         if (expandedCandidates.isEmpty()) {
             appendExpanded(lastCandidates, lastCandPage)
@@ -696,13 +975,14 @@ class YcImeService : InputMethodService() {
 
     private fun collapseCandExpand() {
         candExpanded = false
-        // 保留已加载候选，收起后仍可跟手横滑
+        panel?.hideCandidatePicker()
         panel?.setCandidateExpanded(false)
     }
 
     private fun clearCandScrollBuffer() {
         candExpanded = false
         expandedCandidates.clear()
+        panel?.hideCandidatePicker()
         panel?.setCandidateExpanded(false)
     }
 
@@ -796,8 +1076,46 @@ class YcImeService : InputMethodService() {
 
     private fun reloadLayout(layoutId: String) {
         currentLayoutId = layoutId
+        if (layoutId != "layout_symbol") {
+            letterLayoutId = layoutId
+        }
+        val isThai = layoutId.contains("thai")
+        val isVi = layoutId.contains("vietnamese")
         val rows = LayoutLoader.load(filesDir, layoutId)
-        panel?.setLayoutRows(rows)
+        val shiftAlt = when {
+            isThai -> LayoutLoader.load(filesDir, "layout_thai_shift")
+            isVi -> LayoutLoader.load(filesDir, "layout_vietnamese_shift")
+            else -> null
+        }
+        val base = when {
+            layoutId == "layout_thai_shift" -> LayoutLoader.load(filesDir, "layout_thai")
+            layoutId == "layout_vietnamese_shift" -> LayoutLoader.load(filesDir, "layout_vietnamese")
+            else -> rows
+        }
+        val resolvedId = when (layoutId) {
+            "layout_thai_shift" -> "layout_thai"
+            "layout_vietnamese_shift" -> "layout_vietnamese"
+            else -> layoutId
+        }
+        val viSpecial = if (resolvedId.contains("vietnamese")) 0 else -1
+        panel?.setUseZhPunct(currentLangCode == "zh")
+        panel?.setScriptHint(
+            when {
+                isVi || resolvedId.contains("vietnamese") -> "vi"
+                isThai || resolvedId.contains("thai") -> "th"
+                else -> "latn"
+            },
+        )
+        panel?.setLayoutRows(
+            rows = when (layoutId) {
+                "layout_thai_shift", "layout_vietnamese_shift" -> base
+                else -> rows
+            },
+            shiftAltRows = shiftAlt,
+            layoutId = resolvedId,
+            viSpecialRowIndex = viSpecial,
+        )
+        updateModeLabel()
     }
 
     /** @return true if a non-empty Commit or DeleteSurrounding was applied */
@@ -842,14 +1160,19 @@ class YcImeService : InputMethodService() {
                         when {
                             cmd.layout == YcNative.LAYOUT_HANDWRITING_PAD ||
                                 cmd.layoutId == "layout_handwriting" -> {
-                                panel?.setHandwritingMode(true)
-                                handwritingActive = true
+                                if (allowsHandwriting()) {
+                                    panel?.setHandwritingMode(true)
+                                    handwritingActive = true
+                                } else {
+                                    Log.w(TAG, "ignore handwriting ReloadKeyboard for lang=$currentLangCode")
+                                }
                             }
                             else -> {
                                 panel?.setHandwritingMode(false)
                                 handwritingActive = false
                                 val id = cmd.layoutId.ifEmpty { "layout_pinyin26" }
                                 reloadLayout(id)
+                                syncLangFromLayout(id)
                             }
                         }
                     }
@@ -888,6 +1211,10 @@ class YcImeService : InputMethodService() {
             }
         } else {
             asciiMode = if (handwritingActive) false else snap.asciiMode
+            if (currentLangCode == "zh" || currentLangCode == "en") {
+                currentLangCode = if (asciiMode) "en" else "zh"
+                updateHandwritingToolbar()
+            }
             val composingChanged = snap.composing != lastComposing
             lastComposing = snap.composing
             lastCandPage = snap.candPage
@@ -908,7 +1235,12 @@ class YcImeService : InputMethodService() {
                 if (lastComposing.isNotEmpty()) {
                     appendExpanded(lastCandidates, snap.candPage)
                 }
-            } else if (lastComposing.isNotEmpty()) {
+                if (candExpanded && lastComposing.isEmpty()) {
+                    // composing 被清空：关闭更多面板
+                    candExpanded = false
+                }
+            } else if (candExpanded || lastComposing.isNotEmpty()) {
+                // 弹窗打开或组字中：翻页追加，勿清空（否则列表闪回顶部）
                 appendExpanded(lastCandidates, snap.candPage)
             } else {
                 expandedCandidates.clear()
@@ -916,11 +1248,14 @@ class YcImeService : InputMethodService() {
         }
 
         val inHw = handwritingActive || panel?.isHandwritingMode() == true
+        // VI/TH 走专用键面 + 引擎查词，不受中/英 asciiMode 影响；否则会误清空候选
+        val hideAsciiCands =
+            asciiMode && !inHw && currentLangCode != "vi" && currentLangCode != "th"
         val displayCands = when {
             // 选词后若有离线联想，仍展示；仅在无候选时隐藏
             skipEditorCommands && !inHw && lastCandidates.isEmpty() -> emptyList()
             preferEditorDelete && !inHw && lastCandidates.isEmpty() -> emptyList()
-            asciiMode && !inHw -> emptyList()
+            hideAsciiCands -> emptyList()
             else -> displayCandidates()
         }
         panel?.onSnapshot(
@@ -1045,5 +1380,133 @@ class YcImeService : InputMethodService() {
         ic.endBatchEdit()
         val after = ic.getTextBeforeCursor(32, 0)
         Log.i(TAG, "commitToEditor '$text' before='$before' after='$after'")
+    }
+
+    private fun onLangPicked(opt: LangOption) {
+        Log.i(TAG, "lang picked ${opt.code} pack=${opt.packId} ascii=${opt.ascii}")
+        if (handwritingActive || panel?.isHandwritingMode() == true) {
+            dismissHandwriting()
+        }
+        when {
+            opt.ascii -> {
+                // 英语：确保在中文包上再 ToggleAscii
+                if (currentLangCode == "vi" || currentLangCode == "th") {
+                    switchLangPack("zh-pack-v1")
+                }
+                if (!asciiMode) {
+                    submit(YcNative.ACTION_TOGGLE_ASCII)
+                    refreshUi()
+                }
+                currentLangCode = "en"
+                asciiMode = true
+            }
+            opt.code == "zh" -> {
+                if (currentLangCode == "vi" || currentLangCode == "th") {
+                    switchLangPack("zh-pack-v1")
+                }
+                if (asciiMode) {
+                    submit(YcNative.ACTION_TOGGLE_ASCII)
+                    refreshUi()
+                }
+                currentLangCode = "zh"
+                asciiMode = false
+            }
+            else -> {
+                val packId = opt.packId ?: return
+                switchLangPack(packId)
+                currentLangCode = opt.code
+                asciiMode = false
+            }
+        }
+        // 不依赖引擎 ReloadKeyboard：壳层按语种强制切换键面
+        reloadLayout(layoutIdForLang(currentLangCode))
+        updateHandwritingToolbar()
+        updateModeLabel()
+    }
+
+    /** 各语种默认字母布局 id（与 pack.toml default_layout_id 对齐）。 */
+    private fun layoutIdForLang(code: String): String = when (code) {
+        "vi" -> "layout_vietnamese"
+        "th" -> "layout_thai"
+        else -> "layout_pinyin26"
+    }
+
+    private fun switchLangPack(packId: String) {
+        val hash = hashPackId(packId)
+        submit(YcNative.ACTION_SWITCH_LANG, keyCode = hash)
+        refreshUi()
+        Log.i(TAG, "SwitchLang $packId hash=$hash layout=$currentLayoutId")
+    }
+
+    private fun syncLangFromLayout(layoutId: String) {
+        when {
+            layoutId.contains("vietnamese") || layoutId.contains("telex") -> {
+                currentLangCode = "vi"
+                asciiMode = false
+            }
+            layoutId.contains("thai") -> {
+                currentLangCode = "th"
+                asciiMode = false
+            }
+            layoutId.contains("pinyin") || layoutId.contains("qwerty") -> {
+                if (currentLangCode != "en") {
+                    currentLangCode = if (asciiMode) "en" else "zh"
+                }
+            }
+        }
+        updateHandwritingToolbar()
+    }
+
+    /** 声调作用于 composing 末尾可加调元音；已带调元音则停止；无 composing 则改光标前一字符。 */
+    private fun applyViTone(toneId: String) {
+        val map = VI_TONE_MAP[toneId] ?: return
+        if (lastComposing.isNotEmpty()) {
+            val chars = lastComposing.toCharArray()
+            var changed = false
+            for (i in chars.indices.reversed()) {
+                val ch = chars[i]
+                val repl = map[ch]
+                if (repl != null) {
+                    chars[i] = repl
+                    changed = true
+                    break
+                }
+                if (isViVowelFamily(ch)) break
+            }
+            if (!changed) return
+            val oldLen = lastComposing.length
+            val newText = String(chars)
+            // 同步引擎：退格清空再逐字喂入（保持查词与 composing 一致）
+            repeat(oldLen) { submit(YcNative.ACTION_BACKSPACE) }
+            for (ch in newText) {
+                submit(YcNative.ACTION_KEY_PRESS, ch.code)
+            }
+            refreshUi()
+            return
+        }
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(16, 0)?.toString() ?: return
+        if (before.isEmpty()) return
+        for (i in before.indices.reversed()) {
+            val ch = before[i]
+            val repl = map[ch]
+            if (repl != null) {
+                val tail = before.substring(i)
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(tail.length, 0)
+                ic.commitText(repl + tail.drop(1), 1)
+                ic.endBatchEdit()
+                return
+            }
+            if (isViVowelFamily(ch)) break
+        }
+    }
+
+    /** 越南元音族（含已带调），用于声调扫描边界。 */
+    private fun isViVowelFamily(ch: Char): Boolean {
+        val s = "aăâeêioôơuưyAĂÂEÊIOÔƠUƯY" +
+            "áàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ" +
+            "ÁÀẢÃẠẮẰẲẴẶẤẦẨẪẬÉÈẺẼẸẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌỐỒỔỖỘỚỜỞỠỢÚÙỦŨỤỨỪỬỮỰÝỲỶỸỴ"
+        return ch in s
     }
 }

@@ -21,8 +21,8 @@
 
 ```text
 ┌─────────────────────────────────────────────┐
-│  预测候选栏 CandBar       高 44–52dp         │
-│  [剪贴板建议芯片]  候选1 候选2 候选3 …      │
+│  顶栏：模式 | CandBar 单行 | AI | 收起        │
+│         候选横滑（字词合并）·「…」弹窗       │
 ├─────────────────────────────────────────────┤
 │  工具栏 Toolbar（图标行）  高 40dp            │
 │  ⚙ 翻译 剪贴板 语音 表情 手写 AI写作              │
@@ -45,18 +45,21 @@
 
 ### 3.1 候选栏 CandBar
 
+内嵌于顶栏中间（对齐 `参考效果.html`），**单行横滑**（字/词合并，按引擎顺序）：
+
 | 元素 | 规格 | 说明 |
 |------|------|------|
-| 高度 | 48–56dp | 含拼音行时可取上限 |
-| 语言标签 | Pill 样式 | 显示当前 LangPack 名称 |
-| 拼音串 | 12–13sp，accent 色 | `composing.text`，可配置隐藏 |
-| 候选词 | 15sp，水平滚动 | 首屏 5–9 条；选中项加粗 + 描边 |
-| 候选间距 | 6dp | 左右 padding 10dp |
+| 高度 | 收起顶栏约 **56dp** | 单行候选 + 顶栏 padding |
+| 候选 | 约 15–16sp，主色 | 引擎顺序（完整音节时单字自然靠前） |
+| 横滑 | 单行 `overflow-x` | 触底可加载更多页 |
+| 候选间距 | 6dp | 左右 padding 约 4–10dp |
+| 更多 | 右侧固定「…」 | 有候选时显示；点击弹出**候选选择面板** |
 
 **状态**
 
-- 无候选：仅显示拼音串或空态占位。
-- AI 候选：同排靠后，样式与本地词一致，score 低不抢首屏。
+- 无候选：空态占位。
+- AI 候选：同列表展示，score 低不抢首屏。
+- 「…」更多：弹出覆盖键区的**合并网格**面板（4 列、引擎顺序、下滑加载更多）；点选上屏或关闭后收起；顶栏高度保持约 56dp。
 
 ### 3.2 工具栏 Toolbar
 
@@ -201,10 +204,10 @@ ThemeTokens {
 
 | LangPack | 布局 ID | 说明 |
 |----------|---------|------|
-| zh | layout_26_pinyin | 26 键全拼（默认） |
-| en | layout_qwerty | 英文 QWERTY |
-| vi | layout_telex | Telex 越南语 |
-| th | layout_thai | 泰语辅音/元音分区 |
+| zh | layout_pinyin26 | 26 键全拼（默认） |
+| en | （无独立包，ToggleAscii） | 英文 QWERTY / ASCII |
+| vi | layout_vietnamese | Windows 标准越语（专用字母 + 声调行；Shift → layout_vietnamese_shift） |
+| th | layout_thai | 泰语 Kedmanee（Shift → layout_thai_shift） |
 
 地球键 / 语言键：循环 `PluginHost.listEnabled()`；切换时 `Scheduler.switchLang` + 候选栏更新语言 Pill。
 
