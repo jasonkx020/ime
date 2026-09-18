@@ -2,6 +2,7 @@
 
 mod dat;
 mod pinyin_match;
+mod typo;
 mod user_words;
 
 pub use dat::{
@@ -14,7 +15,8 @@ pub use pinyin_match::{
     is_complete_syllable, is_valid_pinyin_input, is_valid_prefix, key_matches_composing,
     key_matches_jianpin, split_syllables,
 };
-pub use user_words::{merge_user_boosts, UserWordStore};
+pub use typo::adjacent_typo_variants;
+pub use user_words::{merge_user_boosts, merge_user_boosts_lang, UserWordStore};
 
 use yc_types::{Candidate, EngineError, HotResult};
 

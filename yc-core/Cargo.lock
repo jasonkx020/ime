@@ -990,6 +990,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "ureq",
  "yc-lexicon",
  "yc-pack",
  "yc-plugin",

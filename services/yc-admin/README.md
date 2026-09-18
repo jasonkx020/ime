@@ -82,22 +82,27 @@ GET  /api/v1/personalization/{device_id}
 }
 ```
 
-隐私约定：只上报拼音 key + 选中词 + 候选位次；**不要**上报 composing 明文、聊天上下文或敏感字段。`privacy_ok=false` 的事件会被丢弃。
+隐私约定：只上报 `query_key` + 选中词 + 候选位次 + `lang`/`pack_id`；**不要**上报 composing 明文、聊天上下文或敏感字段。`privacy_ok=false` 的事件会被丢弃。
 
 ### Personalization 示例
 
 ```json
 {
   "device_id": "d-001",
+  "lang": "en",
   "version": 1710000000,
   "boosts": [
-    { "pinyin": "ta", "word": "他", "boost": 10.5, "freq": 3 }
+    { "query_key": "th", "word": "thanks", "boost": 10.5, "freq": 3, "lang": "en" }
   ],
-  "persona_tags": ["needs_rerank", "lang_zh"]
+  "prefer_pairs": [
+    { "prev": "thank", "next": "you", "delta": 1.5 }
+  ],
+  "persona_tags": ["needs_rerank", "lang_en"],
+  "expiry_hours": 168
 }
 ```
 
-客户端可将 `boosts` 合并进本地 `user_words`，或在 `LightIntel.rerank` 中按 `boost` 提升排序。
+客户端可将 `boosts` 合并进本地 `user_words`（键：`lang\\tquery_key\\tword`），或在 `LightIntel.rerank` 中按 `boost` / `prefer_pairs` 提升排序。`pinyin` 字段为 `query_key` 的兼容别名。
 
 ## 与 yc-core 的边界
 

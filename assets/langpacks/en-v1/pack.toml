@@ -1,0 +1,19 @@
+id = "en-v1"
+version = 1
+min_host_version = "0.1.0"
+lang = "en"
+display_name = "English"
+
+# QWERTY + English lexicon prefix predict (latin_predict)
+[[schemes]]
+id = "latin"
+name = "English predict"
+default_layout_id = "layout_qwerty"
+file = "schemes/en_latin.yaml"
+
+[lexicon]
+file = "lexicon/en_words.tsv"
+format = "dat"
+
+[build]
+strings = "strings/en.json"

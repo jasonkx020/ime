@@ -75,18 +75,32 @@ type WordStat struct {
 
 // WordBoost is a personalization delta for client LightIntel / user_words.
 type WordBoost struct {
-	Pinyin string  `json:"pinyin"`
-	Word   string  `json:"word"`
-	Boost  float64 `json:"boost"`
-	Freq   int64   `json:"freq"`
+	QueryKey string  `json:"query_key"`
+	Pinyin   string  `json:"pinyin,omitempty"` // legacy alias; same as QueryKey
+	Word     string  `json:"word"`
+	Boost    float64 `json:"boost"`
+	Freq     int64   `json:"freq"`
+	Lang     string  `json:"lang,omitempty"`
+}
+
+// PreferPair is a next-token preference for LightIntel (non-CJK / association).
+type PreferPair struct {
+	Prev  string  `json:"prev"`
+	Next  string  `json:"next"`
+	Delta float64 `json:"delta"`
 }
 
 type PersonalizationPack struct {
-	DeviceID  string      `json:"device_id"`
-	Version   int64       `json:"version"`
-	Generated time.Time   `json:"generated_at"`
-	Boosts    []WordBoost `json:"boosts"`
-	Tags      []string    `json:"persona_tags,omitempty"`
+	DeviceID    string       `json:"device_id"`
+	Lang        string       `json:"lang,omitempty"`
+	PackID      string       `json:"pack_id,omitempty"`
+	Version     int64        `json:"version"`
+	Generated   time.Time    `json:"generated_at"`
+	Boosts      []WordBoost  `json:"boosts"`
+	PreferPairs []PreferPair `json:"prefer_pairs,omitempty"`
+	Demote      []WordBoost  `json:"demote,omitempty"`
+	Tags        []string     `json:"persona_tags,omitempty"`
+	ExpiryHours int          `json:"expiry_hours,omitempty"`
 }
 
 type DashboardStats struct {

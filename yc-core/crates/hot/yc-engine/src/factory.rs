@@ -316,7 +316,29 @@ impl EngineFactory {
     }
 
     pub fn touch_user_word(&mut self, pinyin: &str, word: &str) {
-        self.user_words.lock().touch(pinyin, word);
+        let lang = self
+            .active_pack
+            .as_deref()
+            .map(|id| {
+                let id = id.to_ascii_lowercase();
+                if id.starts_with("zh") || id.contains("zh-") {
+                    "zh".to_string()
+                } else if id.starts_with("en") || id.contains("en-") {
+                    "en".to_string()
+                } else if id.starts_with("vi") || id.contains("vi-") {
+                    "vi".to_string()
+                } else if id.starts_with("th") || id.contains("th-") {
+                    "th".to_string()
+                } else {
+                    id.split('-').next().unwrap_or("").to_string()
+                }
+            })
+            .unwrap_or_default();
+        self.user_words.lock().touch_lang(&lang, pinyin, word);
+    }
+
+    pub fn touch_user_word_lang(&mut self, lang: &str, query_key: &str, word: &str) {
+        self.user_words.lock().touch_lang(lang, query_key, word);
     }
 
     /// Lexicon association suffixes for `prefix`.

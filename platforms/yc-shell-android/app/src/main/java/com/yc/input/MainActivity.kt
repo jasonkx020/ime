@@ -16,6 +16,7 @@ class MainActivity : Activity() {
 
         YcNative.ycCoreInit(dataDir.absolutePath)
 
+        installLangPack(dataDir, msg, "en-v1.imepack")
         installLangPack(dataDir, msg, "vi-v1.imepack")
         installLangPack(dataDir, msg, "th-v1.imepack")
         installLangPack(dataDir, msg, "zh-pack-v1.imepack", enable = true)

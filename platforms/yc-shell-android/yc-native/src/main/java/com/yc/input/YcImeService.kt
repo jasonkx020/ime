@@ -51,7 +51,7 @@ class YcImeService : InputMethodService() {
     private var panel: YcKeyboardPanel? = null
     private var coreInited = false
     private var currentLayoutId: String = "layout_pinyin26"
-    /** 当前输入语言：zh / en / vi / th（en 为 zh 包 ascii） */
+    /** 当前输入语言：zh / en / vi / th（en 默认 en-v1 预测；密码框仍可 ascii 直通） */
     private var currentLangCode: String = "zh"
     /** 符号层返回目标：letters | handwriting */
     private var numberLayerSource: String = "letters"
@@ -240,9 +240,9 @@ class YcImeService : InputMethodService() {
         composingRegionEnd = -1
     }
 
-    /** 安装并启用中/越/泰语言包。 */
+    /** 安装并启用中/英/越/泰语言包。 */
     private fun ensureLangPacks() {
-        for (id in listOf("zh-pack-v1", "vi-v1", "th-v1")) {
+        for (id in listOf("zh-pack-v1", "en-v1", "vi-v1", "th-v1")) {
             installPackFromAssets(id)
         }
         val rc = YcNative.ycCoreSyncLangPacks()
@@ -284,7 +284,7 @@ class YcImeService : InputMethodService() {
                 return
             }
             KeyAction.Search -> {
-                if ((currentLangCode == "vi" || currentLangCode == "th") && lastComposing.isNotEmpty()) {
+                if ((currentLangCode == "vi" || currentLangCode == "th" || currentLangCode == "en") && lastComposing.isNotEmpty()) {
                     // 有候选则选首选；否则上屏 composing
                     if (lastCandidates.isNotEmpty()) {
                         onCandidate(lastCandidates.first())
@@ -863,7 +863,7 @@ class YcImeService : InputMethodService() {
 
         private val LANG_OPTIONS = listOf(
             LangOption("zh", "中文", "中文", "zh-pack-v1"),
-            LangOption("en", "英语", "English", "zh-pack-v1", ascii = true),
+            LangOption("en", "英语", "English", "en-v1"),
             LangOption("vi", "越南语", "Tiếng Việt", "vi-v1"),
             LangOption("th", "泰语", "ไทย", "th-v1"),
         )
@@ -1248,9 +1248,9 @@ class YcImeService : InputMethodService() {
         }
 
         val inHw = handwritingActive || panel?.isHandwritingMode() == true
-        // VI/TH 走专用键面 + 引擎查词，不受中/英 asciiMode 影响；否则会误清空候选
+        // VI/TH/EN 走专用键面 + 引擎查词，不受中文 asciiMode 影响；否则会误清空候选
         val hideAsciiCands =
-            asciiMode && !inHw && currentLangCode != "vi" && currentLangCode != "th"
+            asciiMode && !inHw && currentLangCode != "vi" && currentLangCode != "th" && currentLangCode != "en"
         val displayCands = when {
             // 选词后若有离线联想，仍展示；仅在无候选时隐藏
             skipEditorCommands && !inHw && lastCandidates.isEmpty() -> emptyList()
@@ -1389,8 +1389,8 @@ class YcImeService : InputMethodService() {
         }
         when {
             opt.ascii -> {
-                // 英语：确保在中文包上再 ToggleAscii
-                if (currentLangCode == "vi" || currentLangCode == "th") {
+                // 密码/直通：挂在中文包上 ToggleAscii（不学词）
+                if (currentLangCode != "zh") {
                     switchLangPack("zh-pack-v1")
                 }
                 if (!asciiMode) {
@@ -1401,9 +1401,7 @@ class YcImeService : InputMethodService() {
                 asciiMode = true
             }
             opt.code == "zh" -> {
-                if (currentLangCode == "vi" || currentLangCode == "th") {
-                    switchLangPack("zh-pack-v1")
-                }
+                switchLangPack("zh-pack-v1")
                 if (asciiMode) {
                     submit(YcNative.ACTION_TOGGLE_ASCII)
                     refreshUi()
@@ -1426,6 +1424,7 @@ class YcImeService : InputMethodService() {
 
     /** 各语种默认字母布局 id（与 pack.toml default_layout_id 对齐）。 */
     private fun layoutIdForLang(code: String): String = when (code) {
+        "en" -> "layout_qwerty"
         "vi" -> "layout_vietnamese"
         "th" -> "layout_thai"
         else -> "layout_pinyin26"

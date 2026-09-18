@@ -102,9 +102,20 @@ CREATE TABLE IF NOT EXISTS word_boosts (
   freq INTEGER NOT NULL,
   version INTEGER NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY(device_id, pinyin, word)
+  lang TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(device_id, pinyin, word, lang)
 );
 CREATE INDEX IF NOT EXISTS idx_boost_device ON word_boosts(device_id);
+
+CREATE TABLE IF NOT EXISTS personalization_meta (
+  device_id TEXT NOT NULL,
+  lang TEXT NOT NULL DEFAULT '',
+  prefer_pairs_json TEXT NOT NULL DEFAULT '[]',
+  demote_json TEXT NOT NULL DEFAULT '[]',
+  version INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(device_id, lang)
+);
 
 CREATE TABLE IF NOT EXISTS catalog_meta (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -112,7 +123,12 @@ CREATE TABLE IF NOT EXISTS catalog_meta (
 );
 INSERT OR IGNORE INTO catalog_meta(id, catalog_version) VALUES (1, 1);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// Soft migrate existing DBs created before lang column / personalization_meta.
+	_, _ = s.db.Exec(`ALTER TABLE word_boosts ADD COLUMN lang TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 func nowUTC() time.Time { return time.Now().UTC() }
@@ -348,9 +364,10 @@ func (s *Store) ListProfileIDs(ctx context.Context, limit int) ([]string, error)
 }
 
 type AggregateRow struct {
-	Key   string
-	Word  string
-	Count int64
+	Key    string
+	Word   string
+	Lang   string
+	Count  int64
 	AvgPos float64
 }
 
@@ -407,16 +424,16 @@ GROUP BY query_key ORDER BY c DESC LIMIT 30`, deviceID, sinceStr)
 	rows.Close()
 
 	rows, err = s.db.QueryContext(ctx, `
-SELECT selected_word, query_key, COUNT(*) AS c, AVG(candidate_pos)
+SELECT selected_word, query_key, COALESCE(lang,''), COUNT(*) AS c, AVG(candidate_pos)
 FROM habit_events
 WHERE device_id=? AND privacy_ok=1 AND event_type='select' AND occurred_at>=? AND selected_word!=''
-GROUP BY selected_word, query_key ORDER BY c DESC LIMIT 50`, deviceID, sinceStr)
+GROUP BY selected_word, query_key, lang ORDER BY c DESC LIMIT 80`, deviceID, sinceStr)
 	if err != nil {
 		return
 	}
 	for rows.Next() {
 		var r AggregateRow
-		_ = rows.Scan(&r.Word, &r.Key, &r.Count, &r.AvgPos)
+		_ = rows.Scan(&r.Word, &r.Key, &r.Lang, &r.Count, &r.AvgPos)
 		topWords = append(topWords, r)
 	}
 	rows.Close()
@@ -433,14 +450,18 @@ func (s *Store) ReplaceBoosts(ctx context.Context, deviceID string, version int6
 		return err
 	}
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO word_boosts(device_id, pinyin, word, boost, freq, version, updated_at) VALUES(?,?,?,?,?,?,?)`)
+INSERT INTO word_boosts(device_id, pinyin, word, boost, freq, version, updated_at, lang) VALUES(?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	now := fmtTime(nowUTC())
 	for _, b := range boosts {
-		if _, err := stmt.ExecContext(ctx, deviceID, b.Pinyin, b.Word, b.Boost, b.Freq, version, now); err != nil {
+		qk := b.QueryKey
+		if qk == "" {
+			qk = b.Pinyin
+		}
+		if _, err := stmt.ExecContext(ctx, deviceID, qk, b.Word, b.Boost, b.Freq, version, now, b.Lang); err != nil {
 			return err
 		}
 	}
@@ -449,7 +470,7 @@ INSERT INTO word_boosts(device_id, pinyin, word, boost, freq, version, updated_a
 
 func (s *Store) ListBoosts(ctx context.Context, deviceID string) ([]model.WordBoost, int64, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT pinyin, word, boost, freq, version FROM word_boosts WHERE device_id=? ORDER BY boost DESC`, deviceID)
+SELECT pinyin, word, boost, freq, version, COALESCE(lang,'') FROM word_boosts WHERE device_id=? ORDER BY boost DESC`, deviceID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -459,13 +480,37 @@ SELECT pinyin, word, boost, freq, version FROM word_boosts WHERE device_id=? ORD
 	for rows.Next() {
 		var b model.WordBoost
 		var v int64
-		if err := rows.Scan(&b.Pinyin, &b.Word, &b.Boost, &b.Freq, &v); err != nil {
+		if err := rows.Scan(&b.Pinyin, &b.Word, &b.Boost, &b.Freq, &v, &b.Lang); err != nil {
 			return nil, 0, err
 		}
+		b.QueryKey = b.Pinyin
 		ver = v
 		out = append(out, b)
 	}
 	return out, ver, rows.Err()
+}
+
+func (s *Store) UpsertPersonalizationMeta(ctx context.Context, deviceID, lang string, version int64, preferPairsJSON, demoteJSON string) error {
+	now := fmtTime(nowUTC())
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO personalization_meta(device_id, lang, prefer_pairs_json, demote_json, version, updated_at)
+VALUES(?,?,?,?,?,?)
+ON CONFLICT(device_id, lang) DO UPDATE SET
+  prefer_pairs_json=excluded.prefer_pairs_json,
+  demote_json=excluded.demote_json,
+  version=excluded.version,
+  updated_at=excluded.updated_at`, deviceID, lang, preferPairsJSON, demoteJSON, version, now)
+	return err
+}
+
+func (s *Store) GetPersonalizationMeta(ctx context.Context, deviceID, lang string) (preferPairsJSON, demoteJSON string, version int64, err error) {
+	err = s.db.QueryRowContext(ctx, `
+SELECT prefer_pairs_json, demote_json, version FROM personalization_meta WHERE device_id=? AND lang=?`, deviceID, lang).
+		Scan(&preferPairsJSON, &demoteJSON, &version)
+	if err != nil {
+		return "[]", "[]", 0, err
+	}
+	return
 }
 
 func (s *Store) Dashboard(ctx context.Context) (model.DashboardStats, error) {

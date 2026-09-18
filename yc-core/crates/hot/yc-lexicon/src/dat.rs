@@ -7,7 +7,7 @@ use memmap2::Mmap;
 use parking_lot::Mutex;
 use yc_types::{Candidate, CandidateSource, EngineError, HotResult, MAX_CANDIDATE_POOL};
 
-use crate::user_words::{merge_user_boosts, UserWordStore};
+use crate::user_words::{merge_user_boosts_lang, UserWordStore};
 use crate::LangLexiconHandle;
 
 pub const LEXICON_MAGIC: &[u8; 4] = b"YCLX";
@@ -319,11 +319,98 @@ impl DatLexicon {
             return Vec::new();
         }
 
-        // Full-pinyin path: DAT keys are sorted; prefix range scan.
+        // (freq, word, jianpin_only, typo)
+        let mut best: std::collections::HashMap<String, (u32, bool, bool)> =
+            std::collections::HashMap::new();
+
+        let merge_hit = |best: &mut std::collections::HashMap<String, (u32, bool, bool)>,
+                         freq: u32,
+                         word: String,
+                         jianpin_only: bool,
+                         typo: bool| {
+            match best.get(&word) {
+                Some(&(ef, ej, et)) => {
+                    // Prefer exact over typo; then non-jianpin; then higher freq
+                    let better = (!typo && et)
+                        || (typo == et && !jianpin_only && ej)
+                        || (typo == et && jianpin_only == ej && freq > ef);
+                    if better {
+                        best.insert(word, (freq, jianpin_only, typo));
+                    }
+                }
+                None => {
+                    best.insert(word, (freq, jianpin_only, typo));
+                }
+            }
+        };
+
+        for (freq, word, jianpin_only) in self.lookup_pinyin_one(&composing, syllables) {
+            merge_hit(&mut best, freq, word, jianpin_only, false);
+        }
+
+        for variant in crate::typo::adjacent_typo_variants(&composing) {
+            if best.len() >= MAX_CANDIDATE_POOL {
+                break;
+            }
+            for (freq, word, jianpin_only) in self.lookup_pinyin_one(&variant, syllables) {
+                merge_hit(&mut best, freq, word, jianpin_only, true);
+            }
+        }
+
+        let mut collected: Vec<(u32, String, bool, bool)> = best
+            .into_iter()
+            .map(|(word, (freq, jianpin_only, typo))| (freq, word, jianpin_only, typo))
+            .collect();
+        collected.sort_by(|a, b| {
+            // exact before typo, then non-jianpin, then freq, then text
+            a.3.cmp(&b.3)
+                .then(a.2.cmp(&b.2))
+                .then(b.0.cmp(&a.0))
+                .then(a.1.cmp(&b.1))
+        });
+
+        let mut cands: Vec<Candidate> = collected
+            .into_iter()
+            .take(MAX_CANDIDATE_POOL)
+            .enumerate()
+            .map(|(i, (_freq, text, jianpin_only, typo))| {
+                let mut base = 1.0 - (i as f32 * 0.001);
+                if jianpin_only {
+                    base -= 0.05;
+                }
+                if typo {
+                    base -= 0.08;
+                }
+                Candidate {
+                    id: i as u32,
+                    text,
+                    source: CandidateSource::Lexicon,
+                    score: base,
+                }
+            })
+            .collect();
+
+        // 完整单音节（如 tao）：默认单字优先（仅看原串）
+        if crate::pinyin_match::is_complete_syllable(&composing, syllables) {
+            prefer_single_char_candidates(&mut cands);
+        }
+        cands
+    }
+
+    /// One composing string → raw hits (freq, word, jianpin_only). No typo expansion.
+    fn lookup_pinyin_one(
+        &self,
+        composing: &str,
+        syllables: &[String],
+    ) -> Vec<(u32, String, bool)> {
+        if composing.is_empty() {
+            return Vec::new();
+        }
+
         let mut collected: Vec<(u32, String, bool)> = Vec::new();
         let mut seen = std::collections::HashSet::<String>::new();
         let key_count = self.key_count();
-        let start = lower_bound_key(self, &composing);
+        let start = lower_bound_key(self, composing);
         for i in start..key_count {
             let Some((key_bytes, payload_off, payload_count)) = self.key_at_raw(i) else {
                 break;
@@ -332,7 +419,7 @@ impl DatLexicon {
                 break;
             }
             let key = std::str::from_utf8(key_bytes).unwrap_or("");
-            if !crate::pinyin_match::key_matches_composing(key, &composing, syllables) {
+            if !crate::pinyin_match::key_matches_composing(key, composing, syllables) {
                 continue;
             }
             for j in 0..payload_count {
@@ -344,10 +431,7 @@ impl DatLexicon {
             }
         }
 
-        // Jianpin path: e.g. nh → nihao (key does not start with "nh").
-        // Only scan the first-letter contiguous range (sorted index), and cap hits
-        // so we never walk the whole lexicon on the UI thread.
-        if crate::pinyin_match::needs_jianpin_scan(&composing, syllables) {
+        if crate::pinyin_match::needs_jianpin_scan(composing, syllables) {
             const JIANPIN_MATCH_CAP: usize = 400;
             let first = composing.as_bytes()[0];
             let first_prefix = &composing[..1];
@@ -361,10 +445,10 @@ impl DatLexicon {
                     break;
                 }
                 if key_bytes.starts_with(composing.as_bytes()) {
-                    continue; // already considered in prefix path
+                    continue;
                 }
                 let key = std::str::from_utf8(key_bytes).unwrap_or("");
-                if !crate::pinyin_match::key_matches_jianpin(key, &composing, syllables) {
+                if !crate::pinyin_match::key_matches_jianpin(key, composing, syllables) {
                     continue;
                 }
                 for j in 0..payload_count {
@@ -384,31 +468,7 @@ impl DatLexicon {
                 }
             }
         }
-
-        collected.sort_by(|a, b| {
-            // Prefer non-jianpin-only, then freq
-            a.2.cmp(&b.2).then(b.0.cmp(&a.0)).then(a.1.cmp(&b.1))
-        });
-        let mut cands: Vec<Candidate> = collected
-            .into_iter()
-            .take(MAX_CANDIDATE_POOL)
-            .enumerate()
-            .map(|(i, (_freq, text, jianpin_only))| {
-                let base = 1.0 - (i as f32 * 0.001);
-                Candidate {
-                    id: i as u32,
-                    text,
-                    source: CandidateSource::Lexicon,
-                    score: if jianpin_only { base - 0.05 } else { base },
-                }
-            })
-            .collect();
-
-        // 完整单音节（如 tao）：默认单字优先
-        if crate::pinyin_match::is_complete_syllable(&composing, syllables) {
-            prefer_single_char_candidates(&mut cands);
-        }
-        cands
+        collected
     }
 
     fn lookup_with_key_filter(
@@ -542,8 +602,27 @@ pub struct LexiconManager {
     handles: HashMap<String, LangLexiconHandle>,
     next_handle: u64,
     active_pack: Option<String>,
+    /// BCP-47-ish tag: zh / en / vi / th …
+    active_lang: Option<String>,
     user_words: Option<Arc<Mutex<UserWordStore>>>,
     shared_ngram: Option<SharedCharNgram>,
+}
+
+fn lang_from_pack_id(pack_id: &str) -> String {
+    let id = pack_id.to_ascii_lowercase();
+    if id.starts_with("zh") || id.contains("zh-") {
+        return "zh".into();
+    }
+    if id.starts_with("en") || id.contains("en-") {
+        return "en".into();
+    }
+    if id.starts_with("vi") || id.contains("vi-") {
+        return "vi".into();
+    }
+    if id.starts_with("th") || id.contains("th-") {
+        return "th".into();
+    }
+    id.split('-').next().unwrap_or("").to_string()
 }
 
 impl LexiconManager {
@@ -557,6 +636,15 @@ impl LexiconManager {
 
     pub fn user_words(&self) -> Option<Arc<Mutex<UserWordStore>>> {
         self.user_words.clone()
+    }
+
+    pub fn active_lang(&self) -> &str {
+        self.active_lang.as_deref().unwrap_or("")
+    }
+
+    pub fn set_active_lang(&mut self, lang: impl Into<String>) {
+        let lang = lang.into().trim().to_ascii_lowercase();
+        self.active_lang = if lang.is_empty() { None } else { Some(lang) };
     }
 
     pub fn set_shared_ngram(&mut self, shared: SharedCharNgram) {
@@ -592,6 +680,7 @@ impl LexiconManager {
         self.packs.insert(pack_id.to_string(), lex);
         if self.active_pack.is_none() {
             self.active_pack = Some(pack_id.to_string());
+            self.active_lang = Some(lang_from_pack_id(pack_id));
         }
         self.publish_active_ngram();
         Ok(())
@@ -602,6 +691,7 @@ impl LexiconManager {
         self.handles.remove(pack_id);
         if self.active_pack.as_deref() == Some(pack_id) {
             self.active_pack = None;
+            self.active_lang = None;
             if let Some(shared) = &self.shared_ngram {
                 shared.clear();
             }
@@ -612,6 +702,7 @@ impl LexiconManager {
 
     pub fn set_active(&mut self, pack_id: &str) {
         self.active_pack = Some(pack_id.to_string());
+        self.active_lang = Some(lang_from_pack_id(pack_id));
         self.publish_active_ngram();
     }
 
@@ -626,7 +717,7 @@ impl LexiconManager {
             Vec::new()
         };
         if let Some(store) = &self.user_words {
-            cands = merge_user_boosts(prefix, cands, &store.lock());
+            cands = merge_user_boosts_lang(self.active_lang(), prefix, cands, &store.lock());
         }
         cands
     }
@@ -642,14 +733,20 @@ impl LexiconManager {
             Vec::new()
         };
         if let Some(store) = &self.user_words {
-            cands = merge_user_boosts(composing, cands, &store.lock());
+            cands = merge_user_boosts_lang(self.active_lang(), composing, cands, &store.lock());
         }
         cands
     }
 
-    pub fn touch_user_word(&self, pinyin: &str, word: &str) {
+    pub fn touch_user_word(&self, query_key: &str, word: &str) {
         if let Some(store) = &self.user_words {
-            store.lock().touch(pinyin, word);
+            store.lock().touch_lang(self.active_lang(), query_key, word);
+        }
+    }
+
+    pub fn touch_user_word_lang(&self, lang: &str, query_key: &str, word: &str) {
+        if let Some(store) = &self.user_words {
+            store.lock().touch_lang(lang, query_key, word);
         }
     }
 
@@ -975,6 +1072,58 @@ word\tfreq\tpinyin
     }
 
     #[test]
+    fn adjacent_typo_wn_yields_women() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_wn_typo.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+我们\t90000\twomen
+问题\t80000\twenti
+吻\t1000\twen
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let dat = compile_tsv_to_dat(&tmp).unwrap();
+        let lex = DatLexicon::from_bytes(dat).unwrap();
+        let syls = vec![
+            "wo".into(),
+            "men".into(),
+            "wen".into(),
+            "ti".into(),
+        ];
+        let cands = lex.lookup_pinyin("wn", &syls);
+        assert!(
+            cands.iter().any(|c| c.text == "我们"),
+            "wn (n→m typo) should hit 我们 via wm: {:?}",
+            cands.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
+        let exact = lex.lookup_pinyin("wm", &syls);
+        assert!(exact.iter().any(|c| c.text == "我们"));
+        let women = lex.lookup_pinyin("women", &syls);
+        assert!(women.iter().any(|c| c.text == "我们"));
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn jianpin_nh_still_yields_nihao() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_nh_jianpin.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+你好\t90000\tnihao
+你们\t80000\tnimen
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let dat = compile_tsv_to_dat(&tmp).unwrap();
+        let lex = DatLexicon::from_bytes(dat).unwrap();
+        let syls = vec!["ni".into(), "hao".into(), "men".into()];
+        let cands = lex.lookup_pinyin("nh", &syls);
+        assert!(
+            cands.iter().any(|c| c.text == "你好"),
+            "jianpin nh → 你好 still works: {:?}",
+            cands.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
     fn full_syllable_prefers_single_char_over_high_freq_phrase() {
         let tmp = std::env::temp_dir().join("yc_lexicon_tao_prefer.tsv");
         let tsv = "\
@@ -1021,7 +1170,7 @@ word\tfreq\tpinyin
         let mut store = UserWordStore::new();
         store.touch("tao", "叨光");
         store.touch("tao", "叨光");
-        let ranked = merge_user_boosts("tao", cands, &store);
+        let ranked = crate::merge_user_boosts("tao", cands, &store);
         assert_eq!(ranked[0].text, "叨光");
 
         let _ = std::fs::remove_file(tmp);

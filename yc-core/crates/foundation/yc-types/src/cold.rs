@@ -11,6 +11,8 @@ pub enum ColdKind {
     HandwritingCloud = 5,
     AiPolish = 6,
     AiAssist = 7,
+    HabitUpload = 8,
+    PersonalizationPull = 9,
 }
 
 impl ColdKind {
@@ -24,6 +26,8 @@ impl ColdKind {
             5 => Some(Self::HandwritingCloud),
             6 => Some(Self::AiPolish),
             7 => Some(Self::AiAssist),
+            8 => Some(Self::HabitUpload),
+            9 => Some(Self::PersonalizationPull),
             _ => None,
         }
     }

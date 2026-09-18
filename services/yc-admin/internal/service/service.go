@@ -262,10 +262,12 @@ func (s *Services) RebuildProfileAndBoosts(ctx context.Context, deviceID string)
 	for _, w := range topWords {
 		boost := scoreBoost(w.Count, w.AvgPos)
 		boosts = append(boosts, model.WordBoost{
-			Pinyin: w.Key,
-			Word:   w.Word,
-			Boost:  boost,
-			Freq:   w.Count,
+			QueryKey: w.Key,
+			Pinyin:   w.Key,
+			Word:     w.Word,
+			Boost:    boost,
+			Freq:     w.Count,
+			Lang:     w.Lang,
 		})
 	}
 	sort.Slice(boosts, func(i, j int) bool { return boosts[i].Boost > boosts[j].Boost })
@@ -276,13 +278,63 @@ func (s *Services) RebuildProfileAndBoosts(ctx context.Context, deviceID string)
 	if err := s.Store.ReplaceBoosts(ctx, deviceID, ver, boosts); err != nil {
 		return nil, err
 	}
+
+	// Per-lang HabitSummarizer (rule/LLM-shaped) → prefer_pairs + demote.
+	var allPairs []model.PreferPair
+	var allDemote []model.WordBoost
+	sum := HabitSummarizer{}
+	langSet := map[string]struct{}{}
+	for _, w := range topWords {
+		if w.Lang != "" {
+			langSet[w.Lang] = struct{}{}
+		}
+	}
+	if len(langSet) == 0 {
+		langSet[""] = struct{}{}
+	}
+	for lang := range langSet {
+		out := sum.Summarize(summarizerInput{
+			Lang:     lang,
+			TopWords: topWords,
+			TopKeys:  topKeys,
+			AvgPos:   avgPos,
+			Selects:  selects,
+		})
+		_ = s.Store.UpsertPersonalizationMeta(ctx, deviceID, lang, ver, encodePairs(out.PreferPairs), encodeBoosts(out.Demote))
+		allPairs = append(allPairs, out.PreferPairs...)
+		allDemote = append(allDemote, out.Demote...)
+		for _, t := range out.Tags {
+			profile.PersonaTags = append(profile.PersonaTags, t)
+		}
+	}
+	// Dedupe tags
+	profile.PersonaTags = uniqueStrings(profile.PersonaTags)
+	tagsJSON, _ = json.Marshal(profile.PersonaTags)
+	_ = s.Store.UpsertProfile(ctx, profile, string(langJSON), string(keysJSON), string(wordsJSON), string(packsJSON), string(tagsJSON))
+
 	return &model.PersonalizationPack{
-		DeviceID:  deviceID,
-		Version:   ver,
-		Generated: time.Now().UTC(),
-		Boosts:    boosts,
-		Tags:      profile.PersonaTags,
+		DeviceID:    deviceID,
+		Version:     ver,
+		Generated:   time.Now().UTC(),
+		Boosts:      boosts,
+		PreferPairs: allPairs,
+		Demote:      allDemote,
+		Tags:        profile.PersonaTags,
+		ExpiryHours: 168,
 	}, nil
+}
+
+func uniqueStrings(in []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 func (s *Services) GetProfile(ctx context.Context, deviceID string) (*model.UserProfile, error) {
@@ -314,15 +366,39 @@ func (s *Services) GetPersonalization(ctx context.Context, deviceID string) (*mo
 	}
 	p, _ := s.GetProfile(ctx, deviceID)
 	tags := []string{}
+	lang := ""
 	if p != nil {
 		tags = p.PersonaTags
+		for k := range p.LangPrefs {
+			lang = k
+			break
+		}
+	}
+	var pairs []model.PreferPair
+	var demote []model.WordBoost
+	if prefJSON, demJSON, _, metaErr := s.Store.GetPersonalizationMeta(ctx, deviceID, lang); metaErr == nil {
+		_ = json.Unmarshal([]byte(prefJSON), &pairs)
+		_ = json.Unmarshal([]byte(demJSON), &demote)
+	}
+	// Also merge empty-lang meta
+	if prefJSON, demJSON, _, metaErr := s.Store.GetPersonalizationMeta(ctx, deviceID, ""); metaErr == nil {
+		var p2 []model.PreferPair
+		var d2 []model.WordBoost
+		_ = json.Unmarshal([]byte(prefJSON), &p2)
+		_ = json.Unmarshal([]byte(demJSON), &d2)
+		pairs = append(pairs, p2...)
+		demote = append(demote, d2...)
 	}
 	return &model.PersonalizationPack{
-		DeviceID:  deviceID,
-		Version:   ver,
-		Generated: time.Now().UTC(),
-		Boosts:    boosts,
-		Tags:      tags,
+		DeviceID:    deviceID,
+		Lang:        lang,
+		Version:     ver,
+		Generated:   time.Now().UTC(),
+		Boosts:      boosts,
+		PreferPairs: pairs,
+		Demote:      demote,
+		Tags:        tags,
+		ExpiryHours: 168,
 	}, nil
 }
 

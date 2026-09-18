@@ -3,11 +3,15 @@
 mod ai_handler;
 mod repository;
 mod runtime;
+mod sync_worker;
 mod user_words;
 
 pub use ai_handler::{ColdAiHandler, NoOpColdAiHandler};
 pub use repository::Repository;
 pub use runtime::{ColdCallback, ColdPathRuntime};
+pub use sync_worker::{
+    HabitEventDto, PersonalizationPackDto, PreferPairDto, SyncWorker, SyncWorkerConfig, WordBoostDto,
+};
 pub use user_words::open_user_words;
 
 #[cfg(test)]

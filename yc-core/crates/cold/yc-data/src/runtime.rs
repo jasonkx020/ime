@@ -221,6 +221,11 @@ impl ColdPathRuntime {
                 let handler = ai_handler.read().clone();
                 handler.handle(kind, payload)
             }
+            // Habit sync is handled by SyncWorker (direct); cold path acknowledges only.
+            ColdKind::HabitUpload | ColdKind::PersonalizationPull => {
+                let _ = (repo, payload);
+                (br#"{"ok":true}"#.to_vec(), 0)
+            }
         }
     }
 }

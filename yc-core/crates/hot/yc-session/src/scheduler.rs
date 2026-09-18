@@ -363,6 +363,7 @@ impl Scheduler {
         mode.layout = KeyboardLayout::Qwerty;
         mode.lang = Language::En;
         sessions.set_input_mode(editor_id, mode);
+        self.intel.set_lang(&pack.lang_tag);
         sessions.update_composing(editor_id, ComposingText::empty());
         handwriting.remove_session(editor_id);
         self.apply_mode_change(sessions, handwriting, editor_id)
@@ -666,7 +667,15 @@ impl Scheduler {
             for cmd in &step.commands {
                 if let UiCommand::Commit { text } = cmd {
                     if !learn_key.is_empty() && !text.is_empty() {
-                        self.factory.touch_user_word(&learn_key, text);
+                        let lang = sessions
+                            .input_mode(editor_id)
+                            .map(|m| m.lang_tag.clone())
+                            .unwrap_or_default();
+                        if lang.is_empty() {
+                            self.factory.touch_user_word(&learn_key, text);
+                        } else {
+                            self.factory.touch_user_word_lang(&lang, &learn_key, text);
+                        }
                     }
                 }
             }

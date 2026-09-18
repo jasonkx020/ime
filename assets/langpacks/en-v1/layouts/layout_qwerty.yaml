@@ -1,0 +1,47 @@
+layout_id: layout_qwerty
+name: QWERTY
+rows:
+  - - { label: "1", output: "1", width: 1.0 }
+    - { label: "2", output: "2", width: 1.0 }
+    - { label: "3", output: "3", width: 1.0 }
+    - { label: "4", output: "4", width: 1.0 }
+    - { label: "5", output: "5", width: 1.0 }
+    - { label: "6", output: "6", width: 1.0 }
+    - { label: "7", output: "7", width: 1.0 }
+    - { label: "8", output: "8", width: 1.0 }
+    - { label: "9", output: "9", width: 1.0 }
+    - { label: "0", output: "0", width: 1.0 }
+  - - { label: "Q", output: "q", width: 1.0 }
+    - { label: "W", output: "w", width: 1.0 }
+    - { label: "E", output: "e", width: 1.0 }
+    - { label: "R", output: "r", width: 1.0 }
+    - { label: "T", output: "t", width: 1.0 }
+    - { label: "Y", output: "y", width: 1.0 }
+    - { label: "U", output: "u", width: 1.0 }
+    - { label: "I", output: "i", width: 1.0 }
+    - { label: "O", output: "o", width: 1.0 }
+    - { label: "P", output: "p", width: 1.0 }
+  - - { label: "A", output: "a", width: 1.0 }
+    - { label: "S", output: "s", width: 1.0 }
+    - { label: "D", output: "d", width: 1.0 }
+    - { label: "F", output: "f", width: 1.0 }
+    - { label: "G", output: "g", width: 1.0 }
+    - { label: "H", output: "h", width: 1.0 }
+    - { label: "J", output: "j", width: 1.0 }
+    - { label: "K", output: "k", width: 1.0 }
+    - { label: "L", output: "l", width: 1.0 }
+  - - { label: "⇧", action: "shift", width: 1.4 }
+    - { label: "Z", output: "z", width: 1.0 }
+    - { label: "X", output: "x", width: 1.0 }
+    - { label: "C", output: "c", width: 1.0 }
+    - { label: "V", output: "v", width: 1.0 }
+    - { label: "B", output: "b", width: 1.0 }
+    - { label: "N", output: "n", width: 1.0 }
+    - { label: "M", output: "m", width: 1.0 }
+    - { label: "⌫", action: "backspace", width: 1.4 }
+  - - { label: "!#1", action: "switch_layout", width: 1.15 }
+    - { label: "🌐", action: "switch_lang", width: 1.15 }
+    - { label: ",", output: ",", width: 0.9 }
+    - { label: "space", output: " ", width: 3.4 }
+    - { label: ".", output: ".", width: 0.9 }
+    - { label: "search", output: "\n", width: 1.4 }

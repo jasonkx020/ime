@@ -1,0 +1,9 @@
+# English predict — QWERTY + lowercase lexicon prefix match.
+scheme_id: latin
+lang: en
+alphabet: "abcdefghijklmnopqrstuvwxyz"
+transform:
+  type: latin_predict
+
+candidate:
+  sources: [lexicon, user, hot]

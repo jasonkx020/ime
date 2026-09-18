@@ -491,6 +491,8 @@ KeyPress
   → UiBinder.onSnapshot             // 主线程渲染
 ```
 
+拼音 `lookup_pinyin`（table scheme）：全拼前缀 + 简拼之外，支持 **QWERTY 邻键 1-edit** 纠错（单字符替换为邻键，如 `wn`→`wm`→「我们」）；原串精确命中优先，纠错命中 score −0.08。
+
 #### 3.3.3 展示策略
 
 | 规则 | 说明 |
@@ -1788,7 +1790,7 @@ iOS Keyboard Extension 构建时使用 **最小 feature 集**，控制二进制�
 | **M3.5** | 语言包 OTA | PluginHost + 至少 1 个东南亚 LangPack（如 vi/th）；enable/disable；无需 App 更新 |
 
 > **yc-core 已实现（M3）**：`yc-theme` + `ThemeRuntime`；`yc-data` 冷路径后台队列 + `YcColdCallback`；`UiCommand::ApplyTheme` / `YC_CMD_APPLY_THEME`；连写低置信 → `ConfirmCloudHandwriting` / stub 云识别；验收见 [M3_SMOKE.md](M3_SMOKE.md)。
-> **yc-core 已实现（M3.5 + LangPack P0–P3 + 拼音词库）**：`LangPackSlot` + manifest 驱动 lexicon/strings/layout；`EngineFactory.register` + `DataDrivenEngine`（latin/rule_chain/table）；`yc-scheme` / `yc-layout` 编译 `scheme/*.bin`、`layouts/*.bin`；`switch_lang` 读 Slot；`ReloadKeyboard { layout_id }` 六端 LayoutLoader；fixture `vi-v1` / `th-v1` / `zh-pack-v1`。**中文拼音仅 zh-pack 路径**：`YCLX` v2 mmap 词库（10 万+ 由 `build-zh-lexicon.ps1` 生成），`pinyin_seg` 增量音节校验；已移除 `PinyinEngine` / 内置 demo 词库。
+> **yc-core 已实现（M3.5 + LangPack P0–P3 + 拼音词库）**：`LangPackSlot` + manifest 驱动 lexicon/strings/layout；`EngineFactory.register` + `DataDrivenEngine`（latin/rule_chain/table）；`yc-scheme` / `yc-layout` 编译 `scheme/*.bin`、`layouts/*.bin`；`switch_lang` 读 Slot；`ReloadKeyboard { layout_id }` 六端 LayoutLoader；fixture `vi-v1` / `th-v1` / `zh-pack-v1` / **`en-v1`**。**中文拼音仅 zh-pack 路径**：`YCLX` v2 mmap 词库（10 万+ 由 `build-zh-lexicon.ps1` 生成），`pinyin_seg` 增量音节校验；全拼/简拼 + QWERTY 邻键 1-edit 纠错（原串优先）；已移除 `PinyinEngine` / 内置 demo 词库。英文 `en-v1`：QWERTY + `latin_predict` 前缀补全。习惯闭环：`UserWordStore` 按 `lang\\tquery_key\\tword`；`yc-data::SyncWorker` 上报/拉取；`yc-admin` HabitSummarizer → PersonalizationPack（boosts + prefer_pairs）；`LightIntel` 非 CJK 应用 pairs。
 | **M4** | AI 润色 + 隐私门禁 | 选区润色，三档 PrivacyLevel，密码框拒绝 |
 | **M4.5** | AI 场景助手 MVP | 谈判/恋爱/朋友圈 3 场景；3 条候选；显式上下文；上云预览；Session 隔离 |
 | **M5** | Catalog 多语言 + AiPack OTA + 手写多语言 | 语言包升级；AiPack；中日韩手写模型按需加载 |
