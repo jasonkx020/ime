@@ -8,7 +8,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
 import android.util.TypedValue
+import android.view.ActionMode
 import android.view.Gravity
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.inputmethod.EditorInfo
@@ -56,6 +59,26 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
     }
 
     private val modes = listOf("智能回复", "高情商", "润色", "翻译", "撰写")
+
+    private val clearDraftActionMode = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            menu.add(0, MENU_CLEAR_DRAFT, 0, "删除")
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+            if (item.itemId == MENU_CLEAR_DRAFT) {
+                input.text?.clear()
+                mode.finish()
+                return true
+            }
+            return false
+        }
+
+        override fun onDestroyActionMode(mode: ActionMode) = Unit
+    }
 
     init {
         orientation = VERTICAL
@@ -127,6 +150,8 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
             cornerRadius = dp(8).toFloat()
             setStroke(dp(1), 0xFFE0E0E0.toInt())
         }
+        input.customSelectionActionModeCallback = clearDraftActionMode
+        input.customInsertionActionModeCallback = clearDraftActionMode
         val inputScroll = ScrollView(context).apply {
             isFillViewport = true
             addView(
@@ -399,4 +424,8 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val MENU_CLEAR_DRAFT = 0x11C1
+    }
 }
