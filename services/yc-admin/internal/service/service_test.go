@@ -57,6 +57,9 @@ func TestLangPackPublishAndCatalog(t *testing.T) {
 	if len(cat.Entries) != 1 || cat.Entries[0].PackID != "zh-pack-v1" {
 		t.Fatalf("catalog: %+v", cat)
 	}
+	if cat.Entries[0].Kind != "langpack" {
+		t.Fatalf("want kind=langpack, got %q", cat.Entries[0].Kind)
+	}
 }
 
 func TestHabitProfileBoost(t *testing.T) {

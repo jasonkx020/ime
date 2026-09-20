@@ -79,7 +79,9 @@ impl AiAssistService {
     pub fn is_allowed(&self, privacy: PrivacyLevel, mode: AiMode) -> bool {
         match privacy {
             PrivacyLevel::ForbiddenCloud => false,
-            PrivacyLevel::Sensitive => matches!(mode, AiMode::Polish | AiMode::Compose),
+            PrivacyLevel::Sensitive => {
+                matches!(mode, AiMode::Polish | AiMode::Compose | AiMode::Translate)
+            }
             PrivacyLevel::Normal => true,
         }
     }
@@ -152,6 +154,7 @@ impl AiAssistService {
             background_note: String::new(),
             selection_text: String::new(),
             user_intent: "打个招呼".into(),
+            target_lang: String::new(),
         };
         self.suggest(PrivacyLevel::Normal, &req)
     }
@@ -231,6 +234,7 @@ mod tests {
             background_note: String::new(),
             selection_text: String::new(),
             user_intent: String::new(),
+            target_lang: String::new(),
         };
         let out = svc.suggest(PrivacyLevel::Normal, &req).unwrap();
         assert!(out.local);
@@ -248,6 +252,7 @@ mod tests {
             background_note: "首次合作".into(),
             selection_text: String::new(),
             user_intent: String::new(),
+            target_lang: String::new(),
         };
         let preview = svc.preview_payload(&req);
         assert!(preview.fields[0].value.ends_with("***"));

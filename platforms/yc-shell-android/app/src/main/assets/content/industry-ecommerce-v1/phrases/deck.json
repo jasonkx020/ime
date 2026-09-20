@@ -1,0 +1,11 @@
+{
+  "deck_id": "ecommerce-cs",
+  "title": "电商客服话术",
+  "lang": "zh",
+  "cards": [
+    { "id": "greet", "label": "欢迎", "text": "亲，在的呢，有什么可以帮您～" },
+    { "id": "ship", "label": "发货", "text": "亲，今天拍下，48小时内发出哦。" },
+    { "id": "refund", "label": "退款", "text": "亲，退款申请已收到，我们尽快为您处理。" },
+    { "id": "size", "label": "尺码", "text": "亲，建议按尺码表选，不确定可以告诉我身高体重帮您看。" }
+  ]
+}

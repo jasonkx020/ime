@@ -7,7 +7,7 @@ Go 管理后台：语言包编辑/发布、用户画像分析、输入与选词�
 | 模块 | 说明 |
 |------|------|
 | 语言包 | 草稿 → 上传 `.imepack` → review → publish → Catalog / CDN |
-| Catalog | `GET /api/v1/catalog`（对齐架构文档 JSON Catalog 形态） |
+| Catalog | `GET /api/v1/catalog`；条目 `kind`: `langpack` \| `skin` \| `content`（发布语言包默认 `langpack`；skin/content 可由运营 Catalog 扩展）。**不做** LLM proxy / API Key 托管（AI 为用户 BYOK 直连） |
 | 习惯上报 | `POST /api/v1/habits/events`（仅 `privacy_ok=true`） |
 | 用户画像 | 语言偏好、高频码/词、平均选词位、回删率、persona tags |
 | 选词优化 | 按选词频次与候选位次计算 boost，下发 personalization pack |

@@ -1,0 +1,11 @@
+{
+  "deck_id": "gaming-slang",
+  "title": "游戏开黑话术",
+  "lang": "zh",
+  "cards": [
+    { "id": "invite", "label": "开黑", "text": "来开黑？差一人，语音方便不？" },
+    { "id": "gg", "label": "结束", "text": "这把打完下把换我打野～" },
+    { "id": "sorry", "label": "抱歉", "text": "不好意思刚走神了，继续上分！" },
+    { "id": "carry", "label": "带飞", "text": "发育好了，跟我打团就行。" }
+  ]
+}

@@ -14,6 +14,7 @@ import android.view.inputmethod.InputConnection
 import com.yc.input.handwriting.PaddleOcrEngine
 import com.yc.input.native.ArenaCommand
 import com.yc.input.native.YcNative
+import com.yc.input.speech.SpeechHost
 import com.yc.input.ui.CandidateItem
 import com.yc.input.ui.HandwritingPad
 import com.yc.input.ui.KeyAction
@@ -22,7 +23,11 @@ import com.yc.input.ui.KeyboardSnapshot
 import com.yc.input.ui.LangOption
 import com.yc.input.ui.LayoutLoader
 import com.yc.input.ui.ModeOption
+import com.yc.input.ui.PhraseDeckPanel
+import com.yc.input.ui.SkinRegistry
+import com.yc.input.ui.ThemeTokens
 import com.yc.input.ui.YcKeyboardPanel
+import android.content.Intent
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -72,6 +77,10 @@ class YcImeService : InputMethodService() {
     private var composingRegionStart = -1
     private var composingRegionEnd = -1
     private var handwritingActive = false
+
+    /** AI 面板打开时：缓存宿主选区，用于剪切（剪贴板未变时 listener 不回调） */
+    private var aiCaptureSelection: String? = null
+    private var aiCaptureEditorLen: Int = -1
     private var hwSessionStrokeId = 0L
     private var hwPasswordBlocked = false
     private val hwStrokes = mutableListOf<HandwritingPad.StrokePayload>()
@@ -80,6 +89,7 @@ class YcImeService : InputMethodService() {
     private val hwRecognizeGen = AtomicInteger(0)
     private val hwExecutor = Executors.newSingleThreadExecutor()
     private var hwEngine: PaddleOcrEngine? = null
+    private val speechHost = SpeechHost(this)
 
     override fun onCreate() {
         super.onCreate()
@@ -93,6 +103,23 @@ class YcImeService : InputMethodService() {
         }
         hwEngine = PaddleOcrEngine(applicationContext)
         hwExecutor.execute { hwEngine?.ensureLoaded() }
+        applyPreferredLangFromPrefs()
+    }
+
+    /** 主 App「语言与布局」写入的默认语言，打开键盘时生效。 */
+    private fun applyPreferredLangFromPrefs() {
+        val code = getSharedPreferences("yc_lang", MODE_PRIVATE).getString("preferred_lang", null) ?: return
+        if (code in listOf("zh", "en", "vi", "th") && code != currentLangCode) {
+            currentLangCode = code
+            asciiMode = code == "en"
+            currentLayoutId = layoutIdForLang(code)
+            letterLayoutId = currentLayoutId
+        }
+    }
+
+    override fun onDestroy() {
+        speechHost.stop()
+        super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
@@ -104,6 +131,7 @@ class YcImeService : InputMethodService() {
         kb.setExpandListener { onCandExpand() }
         kb.setNeedMoreListener { onCandNeedMore() }
         kb.setToolbarListener { item -> onToolbar(item) }
+        wireEntertainmentPanels(kb)
         kb.setHandwritingStrokeListener { stroke -> onHwStroke(stroke) }
         kb.setHandwritingRecognizeListener { onHwRecognize() }
         kb.setHandwritingUndoListener { onHwUndo() }
@@ -116,6 +144,7 @@ class YcImeService : InputMethodService() {
         kb.setOnAiChipClick { chip -> Log.i(TAG, "ai chip: $chip") }
         kb.setKeyDownListener { key -> onKeyDown(key) }
         kb.setKeyUpListener { key -> onKeyUp(key) }
+        applyPreferredLangFromPrefs()
         reloadLayout(currentLayoutId)
         updateModeLabel()
         updateHandwritingToolbar()
@@ -124,12 +153,12 @@ class YcImeService : InputMethodService() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        panel?.applyTheme(com.yc.input.ui.ThemeTokens.from(this))
+        panel?.applyTheme(SkinRegistry.resolve(this))
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        panel?.applyTheme(com.yc.input.ui.ThemeTokens.from(this))
+        panel?.applyTheme(SkinRegistry.resolve(this))
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
@@ -211,6 +240,75 @@ class YcImeService : InputMethodService() {
         if (preferEditorDelete && spanLen > 0) {
             Log.w(TAG, "stale composing span after commit — resolve len=$spanLen")
             resolveStaleComposingSpan(spanLen)
+        }
+        captureAiAssistFromCutOrCopy(
+            oldSelStart = oldSelStart,
+            oldSelEnd = oldSelEnd,
+            newSelStart = newSelStart,
+            newSelEnd = newSelEnd,
+        )
+    }
+
+    /**
+     * AI 面板可见时：复制靠剪贴板 listener；剪切若内容与上次剪贴板相同可能不触发 listener，
+     * 用「选区消失 + 正文变短 + 剪贴板==原选区」兜底填入。
+     */
+    private fun captureAiAssistFromCutOrCopy(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+    ) {
+        if (panel?.isAiAssistShowing() != true) {
+            aiCaptureSelection = null
+            aiCaptureEditorLen = -1
+            return
+        }
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)?.toString()
+        val beforeLen = ic.getTextBeforeCursor(10_000, 0)?.length ?: 0
+        val afterLen = ic.getTextAfterCursor(10_000, 0)?.length ?: 0
+        val selLen = if (!selected.isNullOrEmpty()) selected.length else 0
+        val editorLen = beforeLen + afterLen + selLen
+
+        if (!selected.isNullOrBlank()) {
+            aiCaptureSelection = selected
+            aiCaptureEditorLen = editorLen
+            return
+        }
+
+        val hadSelection = oldSelStart != oldSelEnd
+        val nowCollapsed = newSelStart == newSelEnd
+        val captured = aiCaptureSelection
+        if (hadSelection && nowCollapsed && !captured.isNullOrBlank()) {
+            val shrunk = aiCaptureEditorLen >= 0 && editorLen < aiCaptureEditorLen
+            if (shrunk) {
+                fun tryIngest() {
+                    val clip = readClipboardPlainText()
+                    if (clip == captured) {
+                        panel?.prefillAiAssist(captured)
+                    }
+                }
+                tryIngest()
+                // 部分 App 先删选区再写剪贴板，延迟再读一次
+                android.os.Handler(mainLooper).postDelayed({ tryIngest() }, 50)
+            }
+            aiCaptureSelection = null
+            aiCaptureEditorLen = -1
+        } else {
+            aiCaptureEditorLen = editorLen
+        }
+    }
+
+    private fun readClipboardPlainText(): String? {
+        return try {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                ?: return null
+            val clip = cm.primaryClip ?: return null
+            if (clip.itemCount <= 0) return null
+            clip.getItemAt(0)?.coerceToText(this)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -399,7 +497,8 @@ class YcImeService : InputMethodService() {
             handwritingActive = false
         }
         val back = if (source == "handwriting" && allowsHandwriting()) "手写" else "ABC"
-        val packSymbol = LayoutLoader.loadOrNull(filesDir, "layout_symbol")
+        val symbolLayoutId = if (currentLangCode == "en") "layout_en_symbol" else "layout_symbol"
+        val packSymbol = LayoutLoader.loadOrNull(filesDir, symbolLayoutId)
         if (packSymbol != null && packSymbol.size >= 4) {
             val patched = packSymbol.map { row ->
                 row.map { key ->
@@ -407,19 +506,19 @@ class YcImeService : InputMethodService() {
                 }
             }
             panel?.setUseZhPunct(currentLangCode == "zh")
-            panel?.setLayoutRows(patched, null, "layout_symbol", -1)
+            panel?.setLayoutRows(patched, null, symbolLayoutId, -1)
         } else {
             panel?.showSymbolLayer(back)
         }
-        currentLayoutId = "layout_symbol"
-        Log.i(TAG, "enterSymbolLayer source=$source")
+        currentLayoutId = symbolLayoutId
+        Log.i(TAG, "enterSymbolLayer source=$source layout=$symbolLayoutId")
     }
 
     private fun exitSymbolLayer() {
         if (numberLayerSource == "handwriting" && allowsHandwriting()) {
             openHandwriting()
         } else {
-            val id = letterLayoutId.ifEmpty { "layout_pinyin26" }
+            val id = letterLayoutId.ifEmpty { layoutIdForLang(currentLangCode) }
             reloadLayout(id)
         }
         numberLayerSource = "letters"
@@ -430,23 +529,34 @@ class YcImeService : InputMethodService() {
         if (key.action == KeyAction.Mic) {
             val name = LANG_OPTIONS.firstOrNull { it.code == currentLangCode }?.name ?: "中文"
             panel?.showVoiceOverlay(name)
+            speechHost.start(
+                currentLangCode,
+                object : SpeechHost.Callback {
+                    override fun onPartial(text: String) {
+                        Log.i(TAG, "asr partial: $text")
+                    }
+                    override fun onFinal(text: String) {
+                        panel?.setVoiceRecognizing()
+                        hwHandler.postDelayed({
+                            panel?.hideVoiceOverlay()
+                            if (text.isNotBlank()) {
+                                commitToEditor(text)
+                            }
+                        }, 200)
+                    }
+                    override fun onError(message: String) {
+                        Log.w(TAG, "asr: $message")
+                        panel?.hideVoiceOverlay()
+                    }
+                },
+            )
         }
     }
 
     private fun onKeyUp(key: KeyDef) {
-        if (key.action == KeyAction.Mic && panel?.isVoiceOverlayShowing() == true) {
-            panel?.setVoiceRecognizing()
-            hwHandler.postDelayed({
-                panel?.hideVoiceOverlay()
-                val demo = when (currentLangCode) {
-                    "en" -> "Hello"
-                    "vi" -> "Xin chào"
-                    "th" -> "สวัสดี"
-                    else -> "你好"
-                }
-                commitToEditor(demo)
-                Log.i(TAG, "voice stub commit '$demo'")
-            }, 400)
+        if (key.action == KeyAction.Mic) {
+            // Recognition continues until SpeechHost callback; stop listening early if needed.
+            speechHost.stopListening()
         }
     }
 
@@ -631,7 +741,156 @@ class YcImeService : InputMethodService() {
                 }
                 openHandwriting()
             }
+            "设置" -> openDiscover("settings")
+            "皮肤" -> {
+                if (panel?.isSkinPickerShowing() == true) {
+                    panel?.hideSkinPicker()
+                } else {
+                    panel?.showSkinPicker(SkinRegistry.currentId(this))
+                }
+            }
+            "表情" -> {
+                if (panel?.isEmojiPanelShowing() == true) {
+                    panel?.hideEmojiPanel()
+                } else {
+                    panel?.showEmojiPanel()
+                }
+            }
+            "话术" -> openPhraseDeck()
+            "翻译" -> openAiAssist("翻译")
+            "AI" -> openAiAssist("智能回复")
             else -> Log.i(TAG, "toolbar: $item")
+        }
+    }
+
+    private fun openAiAssist(mode: String) {
+        val seed = currentInputConnection?.getSelectedText(0)?.toString()
+            ?: lastComposing.takeIf { it.isNotBlank() }
+            ?: ""
+        if (panel?.isAiAssistShowing() == true && mode == "智能回复") {
+            panel?.hideAiAssist()
+            return
+        }
+        panel?.showAiAssist(mode, seed)
+    }
+
+    private fun openDiscover(tab: String) {
+        try {
+            val target = when (tab) {
+                "settings" -> "settings"
+                "llm", "ai" -> "llm"
+                "skins", "content", "campaigns" -> "discover"
+                else -> "discover"
+            }
+            val intent = Intent().apply {
+                setClassName(packageName, "com.yc.input.MainActivity")
+                putExtra("tab", target)
+                if (tab in listOf("skins", "content", "campaigns")) {
+                    putExtra("channel", tab)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "open MainActivity failed", e)
+        }
+    }
+
+    private fun openPhraseDeck() {
+        val pack = when (currentLangCode) {
+            "zh" -> preferredPhrasePack()
+            else -> null
+        }
+        if (pack == null) {
+            Log.i(TAG, "no phrase deck for lang=$currentLangCode")
+            return
+        }
+        try {
+            assets.open(pack).bufferedReader().use { reader ->
+                val (title, cards) = PhraseDeckPanel.parseDeckJson(reader.readText())
+                panel?.showPhraseDeck(title, cards)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "load phrase deck $pack", e)
+        }
+    }
+
+    private fun preferredPhrasePack(): String {
+        val enabled = getSharedPreferences("yc_content", MODE_PRIVATE)
+            .getString("active_industry", "industry-ecommerce-v1")
+        return "content/$enabled/phrases/deck.json"
+    }
+
+    private fun wireEntertainmentPanels(kb: YcKeyboardPanel) {
+        kb.setSkinPickListener { opt ->
+            if (opt.id == "system") {
+                SkinRegistry.save(this, "system")
+                kb.applyTheme(ThemeTokens.from(this))
+            } else {
+                SkinRegistry.save(this, opt.id)
+                kb.applyTheme(opt.tokens)
+            }
+            kb.hideSkinPicker()
+        }
+        kb.setSkinMoreListener { openDiscover("skins") }
+        kb.setEmojiPickListener { emoji ->
+            commitToEditor(emoji)
+            kb.hideEmojiPanel()
+        }
+        kb.setPhrasePickListener { card ->
+            commitToEditor(card.text)
+            kb.hidePhraseDeck()
+        }
+        kb.setAiAssistGenerateListener { req ->
+            onAiAssistGenerate(req)
+        }
+        kb.setAiAssistPickListener { text ->
+            commitToEditor(text)
+            kb.hideAiAssist()
+        }
+        kb.setAiAssistCloseListener {
+            kb.hideAiAssist()
+        }
+    }
+
+    private fun onAiAssistGenerate(req: com.yc.input.ui.AiAssistPanel.GenerateRequest) {
+        if (hwPasswordBlocked) {
+            panel?.setAiAssistStatus("当前输入框禁止使用 AI")
+            return
+        }
+        val mode = when (req.modeLabel) {
+            "智能回复" -> com.yc.input.llm.AiAssistMode.SmartReply
+            "高情商" -> com.yc.input.llm.AiAssistMode.HighEqReply
+            "撰写" -> com.yc.input.llm.AiAssistMode.Compose
+            "改写" -> com.yc.input.llm.AiAssistMode.Rewrite
+            "翻译" -> com.yc.input.llm.AiAssistMode.Translate
+            else -> com.yc.input.llm.AiAssistMode.Polish
+        }
+        panel?.setAiAssistStatus("生成中…")
+        val targetLang = when (currentLangCode) {
+            "zh" -> "en"
+            else -> "zh"
+        }
+        com.yc.input.llm.LlmAssistRouter.suggestAsync(
+            this,
+            com.yc.input.llm.AiAssistRequest(
+                mode = mode,
+                selectionText = req.input,
+                peerMessage = if (mode == com.yc.input.llm.AiAssistMode.SmartReply ||
+                    mode == com.yc.input.llm.AiAssistMode.HighEqReply
+                ) {
+                    req.input
+                } else {
+                    ""
+                },
+                userIntent = req.input,
+                targetLang = req.targetLang.ifBlank { targetLang },
+            ),
+        ) { result ->
+            if (result.error != null && result.variants.isEmpty()) {
+                panel?.setAiAssistStatus(result.error)
+            }
+            panel?.showAiAssistVariants(result.variants.map { it.text }, result.local)
         }
     }
 
@@ -1076,7 +1335,7 @@ class YcImeService : InputMethodService() {
 
     private fun reloadLayout(layoutId: String) {
         currentLayoutId = layoutId
-        if (layoutId != "layout_symbol") {
+        if (layoutId != "layout_symbol" && layoutId != "layout_en_symbol") {
             letterLayoutId = layoutId
         }
         val isThai = layoutId.contains("thai")
@@ -1416,6 +1675,9 @@ class YcImeService : InputMethodService() {
                 asciiMode = false
             }
         }
+        getSharedPreferences("yc_lang", MODE_PRIVATE).edit()
+            .putString("preferred_lang", currentLangCode)
+            .apply()
         // 不依赖引擎 ReloadKeyboard：壳层按语种强制切换键面
         reloadLayout(layoutIdForLang(currentLangCode))
         updateHandwritingToolbar()
@@ -1424,7 +1686,7 @@ class YcImeService : InputMethodService() {
 
     /** 各语种默认字母布局 id（与 pack.toml default_layout_id 对齐）。 */
     private fun layoutIdForLang(code: String): String = when (code) {
-        "en" -> "layout_qwerty"
+        "en" -> "layout_en_qwerty"
         "vi" -> "layout_vietnamese"
         "th" -> "layout_thai"
         else -> "layout_pinyin26"

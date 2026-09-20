@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Ollama / 局域网自定义端点可能使用 HTTP；公网套餐仍为 HTTPS -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

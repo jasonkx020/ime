@@ -1,0 +1,133 @@
+{
+  "catalog_version": 1,
+  "entries": [
+    {
+      "kind": "skin",
+      "pack_id": "samsung-light",
+      "display_name": "Samsung One UI Light",
+      "version": 1,
+      "url": "asset://skins/samsung-light",
+      "tags": ["简约", "浅色"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "samsung-dark",
+      "display_name": "Samsung One UI Dark",
+      "version": 1,
+      "url": "asset://skins/samsung-dark",
+      "tags": ["简约", "暗色"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "minimal-white",
+      "display_name": "极简白",
+      "version": 1,
+      "url": "builtin://minimal-white",
+      "tags": ["简约"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "minimal-ink",
+      "display_name": "极简墨",
+      "version": 1,
+      "url": "builtin://minimal-ink",
+      "tags": ["简约", "暗色"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "blue-accent",
+      "display_name": "蓝调",
+      "version": 1,
+      "url": "builtin://blue-accent",
+      "tags": ["简约"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "teal-fresh",
+      "display_name": "青绿",
+      "version": 1,
+      "url": "builtin://teal-fresh",
+      "tags": ["卡通"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "rose",
+      "display_name": "玫瑰粉",
+      "version": 1,
+      "url": "builtin://rose",
+      "tags": ["卡通"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "amber",
+      "display_name": "琥珀",
+      "version": 1,
+      "url": "builtin://amber",
+      "tags": ["卡通"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "midnight",
+      "display_name": "午夜蓝",
+      "version": 1,
+      "url": "builtin://midnight",
+      "tags": ["暗色", "IP"]
+    },
+    {
+      "kind": "skin",
+      "pack_id": "graphite",
+      "display_name": "石墨灰",
+      "version": 1,
+      "url": "builtin://graphite",
+      "tags": ["暗色"]
+    },
+    {
+      "kind": "content",
+      "pack_id": "industry-ecommerce-v1",
+      "display_name": "电商客服",
+      "version": 1,
+      "url": "asset://content/industry-ecommerce-v1",
+      "tags": ["行业", "电商"]
+    },
+    {
+      "kind": "content",
+      "pack_id": "industry-gaming-v1",
+      "display_name": "游戏黑话",
+      "version": 1,
+      "url": "asset://content/industry-gaming-v1",
+      "tags": ["行业", "游戏"]
+    },
+    {
+      "kind": "langpack",
+      "pack_id": "zh-pack-v1",
+      "display_name": "中文",
+      "version": 1,
+      "lang": "zh",
+      "url": "asset://langpacks/zh-pack-v1.imepack"
+    },
+    {
+      "kind": "langpack",
+      "pack_id": "en-v1",
+      "display_name": "English",
+      "version": 1,
+      "lang": "en",
+      "url": "asset://langpacks/en-v1.imepack"
+    }
+  ],
+  "campaigns": [
+    {
+      "id": "spring-festival-demo",
+      "title": "新春主题（示例）",
+      "skin_id": "rose",
+      "phrase_deck": "ecommerce-cs",
+      "expires": "2099-02-20"
+    },
+    {
+      "id": "gaming-week-demo",
+      "title": "开黑周（示例）",
+      "skin_id": "midnight",
+      "phrase_deck": "gaming-slang",
+      "expires": "2099-12-31"
+    }
+  ]
+}

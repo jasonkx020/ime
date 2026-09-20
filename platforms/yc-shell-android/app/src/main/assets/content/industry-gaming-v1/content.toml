@@ -1,0 +1,8 @@
+id = "industry-gaming-v1"
+version = 1
+kind = "industry_lexicon"
+display_name = "游戏黑话"
+langs = ["zh"]
+privacy = "local_only"
+lexicon = "lexicon/words.tsv"
+phrases = "phrases/deck.json"

@@ -21,14 +21,16 @@ type LangPack struct {
 }
 
 type CatalogEntry struct {
+	Kind           string `json:"kind"` // langpack | skin | content
 	PackID         string `json:"pack_id"`
-	Lang           string `json:"lang"`
+	Lang           string `json:"lang,omitempty"`
 	Version        uint32 `json:"version"`
 	URL            string `json:"url"`
-	SHA256         string `json:"sha256"`
-	SizeBytes      uint64 `json:"size_bytes"`
-	MinHostVersion string `json:"min_host_version"`
+	SHA256         string `json:"sha256,omitempty"`
+	SizeBytes      uint64 `json:"size_bytes,omitempty"`
+	MinHostVersion string `json:"min_host_version,omitempty"`
 	DisplayName    string `json:"display_name,omitempty"`
+	Tags           []string `json:"tags,omitempty"`
 }
 
 type Catalog struct {

@@ -91,6 +91,37 @@ data class ThemeTokens(
             hwBarAccent = 0xFF2B6CB0.toInt(),
             panelBg = 0xFFFFFFFF.toInt(),
             isDark = false,
+            keyRadiusDp = 6f,
+        )
+
+        /** 对齐 skin.toml samsung-light */
+        fun samsungLight(): ThemeTokens = light().copy(
+            keyboardBg = 0xFFE8EAED.toInt(),
+            keyNormal = 0xFFFFFFFF.toInt(),
+            keyUtility = 0xFFDDE0E4.toInt(),
+            keyAccent = 0xFF1A73E8.toInt(),
+            keyPressed = 0xFFC8CCD2.toInt(),
+            candText = 0xFF202124.toInt(),
+            composingText = 0xFF1A73E8.toInt(),
+            toolbarText = 0xFF5F6368.toInt(),
+            toolbarBg = 0xFFE8EAED.toInt(),
+            keyRadiusDp = 12f,
+        )
+
+        /** 对齐 skin.toml samsung-dark */
+        fun samsungDark(): ThemeTokens = dark().copy(
+            keyboardBg = 0xFF1E1E1E.toInt(),
+            keyNormal = 0xFF2A2A2A.toInt(),
+            keyUtility = 0xFF333333.toInt(),
+            keyAccent = 0xFF1A73E8.toInt(),
+            keyPressed = 0xFF3A3A3A.toInt(),
+            candText = 0xFFE8E8E8.toInt(),
+            composingText = 0xFF7CB3FF.toInt(),
+            toolbarText = 0xFFAAAAAA.toInt(),
+            toolbarBg = 0xFF1E1E1E.toInt(),
+            panelBg = 0xFF1E1E1E.toInt(),
+            keyRadiusDp = 12f,
+            isDark = true,
         )
 
         /** 对齐 参考效果.html @media (prefers-color-scheme: dark) */

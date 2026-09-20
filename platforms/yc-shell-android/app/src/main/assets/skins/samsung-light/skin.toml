@@ -1,0 +1,16 @@
+id = "samsung-light"
+version = 1
+name = "Samsung One UI Light"
+key_radius = 12.0
+key_font_size = 16.0
+cand_font_size = 15.0
+
+[colors]
+keyboard_bg = "#E8EAED"
+key_normal = "#FFFFFF"
+key_utility = "#DDE0E4"
+key_accent = "#1A73E8"
+key_pressed = "#C8CCD2"
+cand_text = "#202124"
+composing_text = "#1A73E8"
+toolbar_text = "#5F6368"

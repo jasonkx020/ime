@@ -1,5 +1,5 @@
-layout_id: layout_qwerty
-name: QWERTY
+layout_id: layout_en_qwerty
+name: US QWERTY
 rows:
   - - { label: "1", output: "1", width: 1.0 }
     - { label: "2", output: "2", width: 1.0 }
@@ -11,6 +11,8 @@ rows:
     - { label: "8", output: "8", width: 1.0 }
     - { label: "9", output: "9", width: 1.0 }
     - { label: "0", output: "0", width: 1.0 }
+    - { label: "-", output: "-", width: 1.0 }
+    - { label: "=", output: "=", width: 1.0 }
   - - { label: "Q", output: "q", width: 1.0 }
     - { label: "W", output: "w", width: 1.0 }
     - { label: "E", output: "e", width: 1.0 }
@@ -39,9 +41,9 @@ rows:
     - { label: "N", output: "n", width: 1.0 }
     - { label: "M", output: "m", width: 1.0 }
     - { label: "⌫", action: "backspace", width: 1.4 }
-  - - { label: "!#1", action: "switch_layout", width: 1.15 }
+  - - { label: "?123", action: "switch_layout", width: 1.15 }
     - { label: "🌐", action: "switch_lang", width: 1.15 }
     - { label: ",", output: ",", width: 0.9 }
     - { label: "space", output: " ", width: 3.4 }
     - { label: ".", output: ".", width: 0.9 }
-    - { label: "search", output: "\n", width: 1.4 }
+    - { label: "go", output: "\n", width: 1.4 }

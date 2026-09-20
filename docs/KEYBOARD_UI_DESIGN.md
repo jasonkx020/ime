@@ -153,6 +153,8 @@
 | 底部 `!#1` 符号页 | ✓ | 切换符号键盘子布局 |
 | `,` `.` 独立键 | ✓ | 空格两侧 |
 | 空格长按语音 | 示意 | 空格键标注麦克风 |
+| 删除键 | ✓ | **单击**删 1 字/1 拼音码；**长按**约 400ms 后加速连删（120→80→50→40ms），抬手或滑出即停（对齐微信） |
+| AI 辅助 | ✓ | 工具栏「翻译」「AI」→ AiAssistPanel（润色/高情商/翻译/智能回复）；BYOK 用户自备 Key |
 | 语言/布局切换 | ✓ | 地球键循环 LangPack |
 | 表情面板 | ✓ | 替换 KeyView 区域 |
 | 剪贴板历史面板 | ✓ | 替换 KeyView 区域 |
@@ -205,7 +207,7 @@ ThemeTokens {
 | LangPack | 布局 ID | 说明 |
 |----------|---------|------|
 | zh | layout_pinyin26 | 26 键全拼（默认） |
-| en | （无独立包，ToggleAscii） | 英文 QWERTY / ASCII |
+| en | layout_en_qwerty（en-v1） | 美式 QWERTY（数字行含 `-` `=`；`?123` → layout_en_symbol ASCII） |
 | vi | layout_vietnamese | Windows 标准越语（专用字母 + 声调行；Shift → layout_vietnamese_shift） |
 | th | layout_thai | 泰语 Kedmanee（Shift → layout_thai_shift） |
 

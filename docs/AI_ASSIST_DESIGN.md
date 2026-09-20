@@ -82,27 +82,47 @@ background_note: 首次合作，预算有限***
 
 ---
 
-## 4. 端云分工
+## 4. 端云分工（BYOK：用户自备 Key，无后台转发）
 
 ```text
 TaskReq
-  → PrivacyScrubber          // 手机/身份证/银行卡/邮箱等脱敏
-  → SceneRouter
-      ├─ [本地] 模板 + 槽位填充     // 简单问候、节日祝福、短拒绝
-      └─ [云端] LLM 多候选生成      // 谈判、恋爱、长文案
-  → AiOutput { variants[3] }
+  → PrivacyScrubber
+  → SceneRouter / AiMode Prompt
+      ├─ [本地] 模板 + 槽位填充     // 无 Key 或弱回退，标注「本地示意」
+      └─ [用户 Provider] 设备直连 LLM  // 内置套餐或自定义/Ollama
+  → AiOutput { variants[1..3] }
 ```
 
 | 路径 | 适用 | 延迟 | PrivacyLevel |
 |------|------|------|--------------|
-| 端侧模板 | 固定句式、槽位短填 | ≤800ms | Sensitive 可用 |
-| 云端 LLM | 复杂推理、高情商、多风格 | ≤2.5s 首条 | 仅 Normal |
+| 端侧模板 | 固定句式、无 Key 弱回退 | ≤800ms | Sensitive 可用 |
+| 用户 BYOK | 润色 / 高情商 / 翻译 / 智能回复等 | ≤2.5s 首条 | 仅 Normal |
+
+**配置模型**：
+
+- **内置套餐**：DeepSeek、智谱、豆包、ChatGPT、Grok 等；用户下拉选择，**只填写 API Key**（Base URL / Model 由 App 定死）。
+- **自定义 / Ollama**：用户填写 Base URL、Model，Key 可选。
+- 请求从本机直连所选端点；**产品与 yc-admin 不做 LLM 转发或 Key 托管**。
+
+**能力矩阵（同一套 BYOK）**：
+
+| 能力 | AiMode | 入口 |
+|------|--------|------|
+| 智能回复 | SmartReply | AI 面板 |
+| 高情商回复 | HighEqReply | AI 面板 |
+| 撰写 / 改写 | Compose / Rewrite | AI 面板 |
+| 润色 | Polish | 工具栏 / 面板 |
+| 翻译 | Translate | 工具栏「翻译」/ 面板 |
 
 **路由规则**：
 
-- `peer_message` + `background_note` 总字数 &lt; 80 且场景有本地模板 → 优先端侧
-- `HighEqReply` / `negotiation` / `dating` → 默认云端（若允许）
-- 无网 → 仅端侧；端侧无模板则 Toast「当前场景需联网」
+- 已配置且允许联网 → BYOK 直连
+- 未配置 → 引导设置；可选本地示意模板
+- `HighEqReply` / 复杂场景 → 优先 BYOK（若允许）
+- ForbiddenCloud / 密码框 → 禁止 LLM
+- 行业「话术卡」仍为本地 ContentPack，不强制 LLM
+
+详见 Catalog：`assets/catalog/llm_providers.json`。
 
 ---
 

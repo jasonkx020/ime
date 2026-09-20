@@ -430,6 +430,8 @@ SkinPack {
 
 大图（背景、按键切图）走文件系统缓存，FlatBuffers 只存路径索引。
 
+> 产品落地（皮肤商城 / 行业 ContentPack / 发现页 / 话术卡）：见 [ENTERTAINMENT_PRODUCT.md](ENTERTAINMENT_PRODUCT.md)。
+
 #### 3.2.3 切换流程
 
 ```text
@@ -766,7 +768,9 @@ Scheduler.switchLang(editor_id, pack_id) -> HotOutcome
 
 > **场景与 Prompt 规范**：[AI_ASSIST_DESIGN.md](AI_ASSIST_DESIGN.md)
 
-在 **3.4 AI 润色** 基础上扩展为 **AiAssistService**，提供场景化沟通辅助：谈判、客户跟进、恋爱聊天、朋友圈文案等。定位为 **P2 异步旁路**，**不阻塞 P0 组词**。
+在 **3.4 AI 润色** 基础上扩展为 **AiAssistService**，提供场景化沟通辅助：谈判、客户跟进、恋爱聊天、朋友圈文案、**翻译**等。定位为 **P2 异步旁路**，**不阻塞 P0 组词**。
+
+> **LLM 接入**：用户自备 Key（BYOK），设备直连所选 Provider；**不做后台转发**。配置与能力矩阵见 [AI_ASSIST_DESIGN.md](AI_ASSIST_DESIGN.md) §4。
 
 #### 3.6.1 设计原则
 

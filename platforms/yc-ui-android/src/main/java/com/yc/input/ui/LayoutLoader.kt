@@ -34,11 +34,20 @@ object LayoutLoader {
         layoutId == "layout_pinyin26" || layoutId == "layout_26_pinyin"
 
     private fun loadFromPack(dataDir: File, layoutId: String): List<List<KeyDef>>? {
-        // 1) 已解压目录：{dataDir}/langpacks/{packId}/layouts/{id}.bin
+        val preferredPack = preferredPackForLayout(layoutId)
+        // 1) 已解压目录：优先匹配语言相关 pack，再扫其余
         val langpacks = File(dataDir, "langpacks")
         if (langpacks.isDirectory) {
-            for (pack in langpacks.listFiles() ?: emptyArray()) {
-                if (!pack.isDirectory) continue
+            val dirs = (langpacks.listFiles() ?: emptyArray())
+                .filter { it.isDirectory }
+                .sortedBy { dir ->
+                    when {
+                        preferredPack != null && dir.name == preferredPack -> 0
+                        dir.name.startsWith("en") && layoutId.startsWith("layout_en") -> 1
+                        else -> 2
+                    }
+                }
+            for (pack in dirs) {
                 val bin = File(pack, "layouts/$layoutId.bin")
                 if (bin.isFile) {
                     parseBin(bin.readBytes())?.let { return it }
@@ -46,8 +55,10 @@ object LayoutLoader {
             }
         }
         // 2) 回退：直接读 {dataDir}/{packId}.imepack ZIP 内 layouts/{id}.bin
-        //    （安装解压失败或目录尚未同步时仍可出键面）
-        val packs = listOf("zh-pack-v1", "vi-v1", "th-v1")
+        val packs = buildList {
+            if (preferredPack != null) add(preferredPack)
+            addAll(listOf("en-v1", "zh-pack-v1", "vi-v1", "th-v1"))
+        }.distinct()
         for (packId in packs) {
             val imepack = File(dataDir, "$packId.imepack")
             if (!imepack.isFile) continue
@@ -56,6 +67,15 @@ object LayoutLoader {
             }
         }
         return null
+    }
+
+    /** layout_en_* → en-v1；避免与 vi/th 的 layout_qwerty stub 撞名误加载。 */
+    private fun preferredPackForLayout(layoutId: String): String? = when {
+        layoutId.startsWith("layout_en") -> "en-v1"
+        layoutId.contains("vietnamese") -> "vi-v1"
+        layoutId.contains("thai") -> "th-v1"
+        layoutId.contains("pinyin") || layoutId == "layout_symbol" -> "zh-pack-v1"
+        else -> null
     }
 
     private fun readBinFromZip(zipFile: File, entryName: String): ByteArray? {
@@ -139,11 +159,13 @@ object LayoutLoader {
                             action = when {
                                 isSpace -> KeyAction.Space
                                 label == "搜索" || label == "换行" || label == "回车" ||
-                                    label == "下一步" || output == "\n" -> KeyAction.Search
+                                    label == "下一步" || label.equals("go", true) ||
+                                    output == "\n" -> KeyAction.Search
                                 else -> KeyAction.Letter
                             },
                             style = when {
-                                label == "搜索" || label == "换行" || label == "下一步" -> KeyStyle.Accent
+                                label == "搜索" || label == "换行" || label == "下一步" ||
+                                    label.equals("go", true) -> KeyStyle.Accent
                                 label == "回车" || isSpace -> KeyStyle.Utility
                                 else -> KeyStyle.Normal
                             },

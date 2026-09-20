@@ -10,6 +10,8 @@ pub enum AiMode {
     Compose = 2,
     Rewrite = 3,
     Polish = 4,
+    /// Translate selection / text to target_lang.
+    Translate = 5,
 }
 
 impl AiMode {
@@ -20,6 +22,7 @@ impl AiMode {
             2 => Some(Self::Compose),
             3 => Some(Self::Rewrite),
             4 => Some(Self::Polish),
+            5 => Some(Self::Translate),
             _ => None,
         }
     }
@@ -42,6 +45,9 @@ pub struct TaskReq {
     pub selection_text: String,
     #[serde(default)]
     pub user_intent: String,
+    /// Target language for Translate (e.g. zh / en / vi / th).
+    #[serde(default)]
+    pub target_lang: String,
 }
 
 impl TaskReq {

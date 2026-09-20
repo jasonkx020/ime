@@ -8,7 +8,7 @@ display_name = "English"
 [[schemes]]
 id = "latin"
 name = "English predict"
-default_layout_id = "layout_qwerty"
+default_layout_id = "layout_en_qwerty"
 file = "schemes/en_latin.yaml"
 
 [lexicon]

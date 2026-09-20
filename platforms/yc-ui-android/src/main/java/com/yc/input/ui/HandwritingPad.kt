@@ -277,7 +277,11 @@ private class HwSideBar(context: Context) : View(context) {
     )
     private val bounds = mutableListOf<Pair<KeyDef, RectF>>()
     private var pressed = -1
+    private var downIndex = -1
     private var onKey: ((KeyDef) -> Unit)? = null
+    private val backspaceRepeat = BackspaceRepeatController(this) { key ->
+        onKey?.invoke(key)
+    }
 
     fun applyTheme(t: ThemeTokens) {
         tokens = t
@@ -318,27 +322,62 @@ private class HwSideBar(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 pressed = hit(event.x, event.y)
+                downIndex = pressed
                 if (pressed >= 0) {
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     playSoundEffect(SoundEffectConstants.CLICK)
+                    val key = keys[pressed]
+                    if (key.action == KeyAction.Backspace) {
+                        backspaceRepeat.onDown(key)
+                    } else {
+                        backspaceRepeat.cancel()
+                    }
                     invalidate()
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val i = hit(event.x, event.y)
+                if (i != pressed) {
+                    pressed = i
+                    invalidate()
+                }
+                if (downIndex >= 0 && keys[downIndex].action == KeyAction.Backspace) {
+                    backspaceRepeat.onMoveStay(i == downIndex)
                 }
             }
             MotionEvent.ACTION_UP -> {
                 val i = hit(event.x, event.y)
-                if (i >= 0 && i == pressed) {
-                    performClick()
-                    onKey?.invoke(keys[i])
+                val wasRepeat = backspaceRepeat.consumedByRepeat()
+                backspaceRepeat.onUpOrCancel()
+                if (i >= 0 && i == downIndex) {
+                    val key = keys[i]
+                    if (key.action == KeyAction.Backspace) {
+                        if (!wasRepeat) {
+                            performClick()
+                            onKey?.invoke(key)
+                        }
+                    } else {
+                        performClick()
+                        onKey?.invoke(key)
+                    }
                 }
                 pressed = -1
+                downIndex = -1
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
+                backspaceRepeat.onUpOrCancel()
                 pressed = -1
+                downIndex = -1
                 invalidate()
             }
         }
         return true
+    }
+
+    override fun onDetachedFromWindow() {
+        backspaceRepeat.cancel()
+        super.onDetachedFromWindow()
     }
 
     private fun hit(x: Float, y: Float): Int {

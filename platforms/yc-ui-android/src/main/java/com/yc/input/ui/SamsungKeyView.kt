@@ -31,11 +31,16 @@ class SamsungKeyView @JvmOverloads constructor(
     private val keyBounds = mutableListOf<Triple<Int, Int, RectF>>()
     private var pressedRow: Int = -1
     private var pressedCol: Int = -1
+    private var downRow: Int = -1
+    private var downCol: Int = -1
     private var shiftState: ShiftState = ShiftState.Off
     /** 越南语顶行（专用字母）行下标，-1 表示无 */
     private var viSpecialRow: Int = -1
     /** latn | vi | th */
     private var scriptHint: String = "latn"
+    private val backspaceRepeat = BackspaceRepeatController(this) { key ->
+        onKey?.invoke(key)
+    }
 
     init {
         isClickable = true
@@ -57,6 +62,9 @@ class SamsungKeyView @JvmOverloads constructor(
         viSpecialRow = viSpecialRowIndex
         pressedRow = -1
         pressedCol = -1
+        downRow = -1
+        downCol = -1
+        backspaceRepeat.cancel()
         invalidate()
     }
 
@@ -212,9 +220,17 @@ class SamsungKeyView @JvmOverloads constructor(
                 if (hit != null) {
                     pressedRow = hit.first
                     pressedCol = hit.second
+                    downRow = hit.first
+                    downCol = hit.second
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     playSoundEffect(SoundEffectConstants.CLICK)
-                    rows.getOrNull(hit.first)?.getOrNull(hit.second)?.let { onKeyDown?.invoke(it) }
+                    val key = rows.getOrNull(hit.first)?.getOrNull(hit.second)
+                    key?.let { onKeyDown?.invoke(it) }
+                    if (key?.action == KeyAction.Backspace) {
+                        backspaceRepeat.onDown(key)
+                    } else {
+                        backspaceRepeat.cancel()
+                    }
                     invalidate()
                 }
             }
@@ -227,34 +243,56 @@ class SamsungKeyView @JvmOverloads constructor(
                     pressedCol = nc
                     invalidate()
                 }
+                val downKey = rows.getOrNull(downRow)?.getOrNull(downCol)
+                if (downKey?.action == KeyAction.Backspace) {
+                    val still = hit != null && hit.first == downRow && hit.second == downCol
+                    backspaceRepeat.onMoveStay(still)
+                }
             }
             MotionEvent.ACTION_UP -> {
                 val hit = hitTest(event.x, event.y)
-                val downKey = if (pressedRow >= 0 && pressedCol >= 0) {
-                    rows.getOrNull(pressedRow)?.getOrNull(pressedCol)
+                val downKey = if (downRow >= 0 && downCol >= 0) {
+                    rows.getOrNull(downRow)?.getOrNull(downCol)
                 } else null
+                val wasRepeat = backspaceRepeat.consumedByRepeat()
+                backspaceRepeat.onUpOrCancel()
                 pressedRow = -1
                 pressedCol = -1
+                downRow = -1
+                downCol = -1
                 invalidate()
                 // 按住说话：即使滑开也在抬手时结束
                 downKey?.let { onKeyUp?.invoke(it) }
                 if (hit != null) {
                     val (ri, ci) = hit
                     val key = rows.getOrNull(ri)?.getOrNull(ci) ?: return true
-                    // Mic 已由 down/up 处理，避免再点一次
-                    if (key.action != KeyAction.Mic) {
-                        onKey?.invoke(key)
+                    when {
+                        key.action == KeyAction.Mic -> Unit
+                        key.action == KeyAction.Backspace -> {
+                            if (!wasRepeat && downKey?.action == KeyAction.Backspace && downKey == key) {
+                                onKey?.invoke(key)
+                            }
+                        }
+                        else -> onKey?.invoke(key)
                     }
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
+                backspaceRepeat.onUpOrCancel()
                 pressedRow = -1
                 pressedCol = -1
+                downRow = -1
+                downCol = -1
                 invalidate()
                 // 不触发 onKeyUp，避免按住说话误提交
             }
         }
         return true
+    }
+
+    override fun onDetachedFromWindow() {
+        backspaceRepeat.cancel()
+        super.onDetachedFromWindow()
     }
 
     private fun hitTest(x: Float, y: Float): Pair<Int, Int>? {

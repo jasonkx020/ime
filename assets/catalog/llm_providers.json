@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "deepseek-chat",
+      "region": "cn",
+      "provider": "DeepSeek",
+      "display_name": "国内 · DeepSeek Chat",
+      "base_url": "https://api.deepseek.com",
+      "api_path": "/v1/chat/completions",
+      "model": "deepseek-chat",
+      "auth": "bearer",
+      "docs_hint": "在 platform.deepseek.com 创建 API Key"
+    },
+    {
+      "id": "deepseek-reasoner",
+      "region": "cn",
+      "provider": "DeepSeek",
+      "display_name": "国内 · DeepSeek Reasoner",
+      "base_url": "https://api.deepseek.com",
+      "api_path": "/v1/chat/completions",
+      "model": "deepseek-reasoner",
+      "auth": "bearer",
+      "docs_hint": "在 platform.deepseek.com 创建 API Key"
+    },
+    {
+      "id": "zhipu-glm4-flash",
+      "region": "cn",
+      "provider": "智谱",
+      "display_name": "国内 · 智谱 GLM-4-Flash",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_path": "/chat/completions",
+      "model": "glm-4-flash",
+      "auth": "bearer",
+      "docs_hint": "在 open.bigmodel.cn 创建 API Key"
+    },
+    {
+      "id": "zhipu-glm4",
+      "region": "cn",
+      "provider": "智谱",
+      "display_name": "国内 · 智谱 GLM-4",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_path": "/chat/completions",
+      "model": "glm-4",
+      "auth": "bearer",
+      "docs_hint": "在 open.bigmodel.cn 创建 API Key"
+    },
+    {
+      "id": "doubao-seed",
+      "region": "cn",
+      "provider": "豆包",
+      "display_name": "国内 · 豆包（方舟）",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "api_path": "/chat/completions",
+      "model": "doubao-seed-1-6-250615",
+      "auth": "bearer",
+      "docs_hint": "若使用推理接入点 ep-xxx，请改选「自定义」并填写接入点 ID 为 Model"
+    },
+    {
+      "id": "openai-gpt4o-mini",
+      "region": "intl",
+      "provider": "OpenAI",
+      "display_name": "国际 · ChatGPT GPT-4o mini",
+      "base_url": "https://api.openai.com",
+      "api_path": "/v1/chat/completions",
+      "model": "gpt-4o-mini",
+      "auth": "bearer",
+      "docs_hint": "在 platform.openai.com 创建 API Key"
+    },
+    {
+      "id": "openai-gpt4o",
+      "region": "intl",
+      "provider": "OpenAI",
+      "display_name": "国际 · ChatGPT GPT-4o",
+      "base_url": "https://api.openai.com",
+      "api_path": "/v1/chat/completions",
+      "model": "gpt-4o",
+      "auth": "bearer",
+      "docs_hint": "在 platform.openai.com 创建 API Key"
+    },
+    {
+      "id": "xai-grok",
+      "region": "intl",
+      "provider": "xAI",
+      "display_name": "国际 · Grok",
+      "base_url": "https://api.x.ai",
+      "api_path": "/v1/chat/completions",
+      "model": "grok-2-latest",
+      "auth": "bearer",
+      "docs_hint": "在 console.x.ai 创建 API Key；模型名以控制台为准"
+    },
+    {
+      "id": "custom-openai-compat",
+      "region": "custom",
+      "provider": "Custom",
+      "display_name": "自定义 / Ollama（OpenAI 兼容）",
+      "base_url": "http://127.0.0.1:11434",
+      "api_path": "/v1/chat/completions",
+      "model": "llama3.2",
+      "auth": "bearer_optional",
+      "allow_override": true,
+      "docs_hint": "真机连电脑 Ollama 请把 Base URL 改为局域网 IP，如 http://192.168.1.10:11434"
+    }
+  ]
+}

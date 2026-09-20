@@ -174,6 +174,7 @@ func (s *Services) BuildCatalog(ctx context.Context) (*model.Catalog, error) {
 	base := strings.TrimRight(s.PublicBase, "/")
 	for _, p := range packs {
 		cat.Entries = append(cat.Entries, model.CatalogEntry{
+			Kind:           "langpack",
 			PackID:         p.PackID,
 			Lang:           p.Lang,
 			Version:        p.Version,
