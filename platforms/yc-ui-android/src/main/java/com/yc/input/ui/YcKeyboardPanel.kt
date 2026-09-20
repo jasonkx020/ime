@@ -11,7 +11,6 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     private val topToolbar = TopToolbar(context)
     private val candBar = SamsungCandBar(context)
     private val featureBar = FeatureBar(context)
-    private val aiBar = AiBar(context)
     private val keyView = SamsungKeyView(context)
     private val handwritingPad = HandwritingPad(context)
     private val langPicker = LangPicker(context)
@@ -54,12 +53,15 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         topToolbar.attachCandidateBar(candBar)
         addView(topToolbar, toolbarLp)
         addView(featureBar, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
-        addView(aiBar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
-        overlayHost.addView(keyView, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        ))
+        overlayHost.addView(
+            keyView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.BOTTOM,
+            ),
+        )
         overlayHost.addView(
             handwritingPad,
             FrameLayout.LayoutParams(
@@ -302,10 +304,6 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         topToolbar.setOnCollapseClick(listener)
     }
 
-    fun setOnAiChipClick(listener: (String) -> Unit) {
-        aiBar.setOnChipClick(listener)
-    }
-
     fun showModePanel(options: List<ModeOption>, selectedId: String) {
         if (options.size <= 1) return
         hideLangPicker()
@@ -346,6 +344,7 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         if (enabled) {
             hideLangPicker()
             hideModePanel()
+            hideEntertainmentPanels()
             keyView.visibility = View.GONE
             handwritingPad.visibility = View.VISIBLE
             // 对齐参考效果 handwriting ≈ 360dp
@@ -355,11 +354,13 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
                 lp.height = hwH
                 overlayHost.layoutParams = lp
             }
+            featureBar.setActiveItem("手写")
         } else {
             handwritingPad.visibility = View.GONE
             handwritingPad.clearInk()
             keyView.visibility = View.VISIBLE
             adjustKeyHeight()
+            refreshFeatureActive()
         }
         requestLayout()
     }
@@ -405,9 +406,13 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideModePanel()
         hideLangPicker()
         skinPicker.show(selectedId, tokens)
+        featureBar.setActiveItem("皮肤")
     }
 
-    fun hideSkinPicker() = skinPicker.hide()
+    fun hideSkinPicker() {
+        skinPicker.hide()
+        refreshFeatureActive()
+    }
 
     fun isSkinPickerShowing(): Boolean = skinPicker.isShowing()
 
@@ -425,13 +430,15 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideLangPicker()
         keyView.visibility = View.GONE
         emojiPanel.show(tokens)
+        featureBar.setActiveItem("表情")
     }
 
     fun hideEmojiPanel() {
         emojiPanel.hide()
-        if (!handwritingMode && !phraseDeckPanel.isShowing()) {
+        if (!handwritingMode && !phraseDeckPanel.isShowing() && !aiAssistPanel.isShowing()) {
             keyView.visibility = View.VISIBLE
         }
+        refreshFeatureActive()
     }
 
     fun isEmojiPanelShowing(): Boolean = emojiPanel.isShowing()
@@ -440,19 +447,21 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         emojiPanel.setOnPick(listener)
     }
 
-    fun showPhraseDeck(title: String, cards: List<PhraseCard>) {
+    fun showPhraseDeck(title: String, cards: List<PhraseCard>, industryLabel: String) {
         hideEntertainmentPanels()
         hideModePanel()
         hideLangPicker()
         keyView.visibility = View.GONE
-        phraseDeckPanel.show(title, cards, tokens)
+        phraseDeckPanel.show(title, cards, industryLabel, tokens)
+        featureBar.setActiveItem("话术")
     }
 
     fun hidePhraseDeck() {
         phraseDeckPanel.hide()
-        if (!handwritingMode && !emojiPanel.isShowing()) {
+        if (!handwritingMode && !emojiPanel.isShowing() && !aiAssistPanel.isShowing()) {
             keyView.visibility = View.VISIBLE
         }
+        refreshFeatureActive()
     }
 
     fun isPhraseDeckShowing(): Boolean = phraseDeckPanel.isShowing()
@@ -461,12 +470,35 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         phraseDeckPanel.setOnPick(listener)
     }
 
+    fun setPhraseOptimizeListener(listener: (PhraseCard) -> Unit) {
+        phraseDeckPanel.setOnOptimize(listener)
+    }
+
+    fun setPhraseIndustryClickListener(listener: () -> Unit) {
+        phraseDeckPanel.setOnIndustryClick(listener)
+    }
+
+    fun setPhraseCloseListener(listener: () -> Unit) {
+        phraseDeckPanel.setOnClose(listener)
+    }
+
+    fun setPhraseVariantPickListener(listener: (String) -> Unit) {
+        phraseDeckPanel.setOnVariantPick(listener)
+    }
+
+    fun setPhraseStatus(msg: String) = phraseDeckPanel.setStatus(msg)
+
+    fun showPhraseVariants(texts: List<String>, local: Boolean) {
+        phraseDeckPanel.showVariants(texts, local)
+    }
+
     fun showAiAssist(preselectMode: String? = null, seedText: String = "") {
         hideEntertainmentPanels()
         hideModePanel()
         hideLangPicker()
         keyView.visibility = View.GONE
         aiAssistPanel.show(preselectMode, seedText, tokens)
+        featureBar.setActiveItem("AI")
     }
 
     fun hideAiAssist() {
@@ -474,6 +506,7 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         if (!handwritingMode && !emojiPanel.isShowing() && !phraseDeckPanel.isShowing()) {
             keyView.visibility = View.VISIBLE
         }
+        refreshFeatureActive()
     }
 
     fun isAiAssistShowing(): Boolean = aiAssistPanel.isShowing()
@@ -510,12 +543,26 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         }
     }
 
+    /** FeatureBar 使用中高亮：与当前打开的协助面板互斥同步。 */
+    private fun refreshFeatureActive() {
+        val active = when {
+            handwritingMode -> "手写"
+            aiAssistPanel.isShowing() -> "AI"
+            emojiPanel.isShowing() -> "表情"
+            phraseDeckPanel.isShowing() -> "话术"
+            skinPicker.isShowing() -> "皮肤"
+            else -> null
+        }
+        featureBar.setActiveItem(active)
+    }
+
     override fun applyTheme(tokens: ThemeTokens) {
         this.tokens = tokens
         topToolbar.applyTheme(tokens)
         featureBar.applyTheme(tokens)
+        // 主题重建后保留选中态
+        refreshFeatureActive()
         candBar.applyTheme(tokens)
-        aiBar.applyTheme(tokens)
         keyView.applyTheme(tokens)
         handwritingPad.applyTheme(tokens)
         modePanel.applyTheme(tokens)
@@ -527,7 +574,6 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
 
     override fun setToolbarListener(listener: (String) -> Unit) {
         featureBar.setOnItemClick(listener)
-        aiBar.setOnChipClick(listener)
     }
 
     fun showLangPicker(options: List<LangOption>, selectedCode: String) {

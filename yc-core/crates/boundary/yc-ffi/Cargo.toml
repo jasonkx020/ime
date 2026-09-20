@@ -30,6 +30,8 @@ ext = ["dep:yc-ext"]
 lang-pack-ota = ["dep:yc-plugin"]
 data = ["dep:yc-data", "yc-data/plugin"]
 full = ["intel", "ai", "handwriting", "ext", "lang-pack-ota", "data"]
+personalization = ["dep:serde_json"]
+# full already pulls serde_json via ai; personalization is for docs/clarity
 
 [dev-dependencies]
 yc-handwriting = { path = "../../features/yc-handwriting" }

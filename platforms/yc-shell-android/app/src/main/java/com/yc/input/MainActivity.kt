@@ -16,10 +16,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.yc.input.llm.HabitPersonaPipeline
 import com.yc.input.llm.LlmAssistRouter
 import com.yc.input.llm.LlmByokPrefs
 import com.yc.input.llm.LlmProviderCatalog
 import com.yc.input.native.YcNative
+import com.yc.input.phrase.PhraseKbStore
+import com.yc.input.phrase.SceneProfileStore
 import com.yc.input.ui.SkinRegistry
 import java.io.File
 import java.util.concurrent.Executors
@@ -56,15 +59,16 @@ class MainActivity : Activity() {
 
         val raw = intent.getStringExtra(EXTRA_TAB) ?: PAGE_HOME
         when (raw) {
-            "skins", "content", "campaigns" -> {
-                discoverChannel = raw
-                showPage(PAGE_DISCOVER)
-            }
             "settings" -> showPage(PAGE_SETTINGS)
             "llm", "ai" -> showPage(PAGE_LLM)
             "langs", "languages" -> showPage(PAGE_LANGS)
+            "phrase", "content" -> showPage(PAGE_PHRASE)
             "discover" -> {
                 discoverChannel = intent.getStringExtra(EXTRA_CHANNEL) ?: "skins"
+                showPage(PAGE_DISCOVER)
+            }
+            "skins", "campaigns" -> {
+                discoverChannel = raw
                 showPage(PAGE_DISCOVER)
             }
             else -> showPage(PAGE_HOME)
@@ -76,15 +80,16 @@ class MainActivity : Activity() {
         setIntent(intent)
         val raw = intent.getStringExtra(EXTRA_TAB) ?: PAGE_HOME
         when (raw) {
-            "skins", "content", "campaigns" -> {
-                discoverChannel = raw
-                showPage(PAGE_DISCOVER)
-            }
             "settings" -> showPage(PAGE_SETTINGS)
             "llm", "ai" -> showPage(PAGE_LLM)
             "langs", "languages" -> showPage(PAGE_LANGS)
+            "phrase", "content" -> showPage(PAGE_PHRASE)
             "discover" -> {
                 discoverChannel = intent.getStringExtra(EXTRA_CHANNEL) ?: discoverChannel
+                showPage(PAGE_DISCOVER)
+            }
+            "skins", "campaigns" -> {
+                discoverChannel = raw
                 showPage(PAGE_DISCOVER)
             }
             else -> showPage(PAGE_HOME)
@@ -94,7 +99,7 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (currentPage == PAGE_LANGS || currentPage == PAGE_LLM) {
+        if (currentPage == PAGE_LANGS || currentPage == PAGE_LLM || currentPage == PAGE_PHRASE) {
             showPage(PAGE_SETTINGS)
         } else {
             super.onBackPressed()
@@ -187,6 +192,7 @@ class MainActivity : Activity() {
                 PAGE_SETTINGS -> buildSettingsPage()
                 PAGE_LANGS -> buildLangsPage()
                 PAGE_LLM -> buildLlmPage()
+                PAGE_PHRASE -> buildPhrasePage()
                 else -> buildHomePage()
             },
             FrameLayout.LayoutParams(
@@ -200,7 +206,7 @@ class MainActivity : Activity() {
     private fun updateNavHighlight() {
         val active = when (currentPage) {
             PAGE_DISCOVER -> PAGE_DISCOVER
-            PAGE_SETTINGS, PAGE_LANGS, PAGE_LLM -> PAGE_SETTINGS
+            PAGE_SETTINGS, PAGE_LANGS, PAGE_LLM, PAGE_PHRASE -> PAGE_SETTINGS
             else -> PAGE_HOME
         }
         styleNav(navHome, active == PAGE_HOME)
@@ -401,13 +407,20 @@ class MainActivity : Activity() {
     }
 
     private fun renderContent(host: LinearLayout) {
+        host.addView(
+            TextView(this).apply {
+                text = "也可在「设置 → 行业话术与知识库」管理自定义场景与知识库。"
+                setTextColor(AppUi.MUTED)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setPadding(0, 0, 0, dp(8))
+            },
+        )
         val catalog = LocalCatalog.load(this)
-        val active = getSharedPreferences("yc_content", MODE_PRIVATE)
-            .getString("active_industry", "industry-ecommerce-v1")
+        val active = SceneProfileStore.activePackId(this)
         val card = AppUi.card(this)
         catalog.entries.filter { it.kind == "content" }.forEachIndexed { i, e ->
             if (i > 0) card.addView(AppUi.divider(this))
-            val on = e.packId == active
+            val on = e.packId == active && SceneProfileStore.mode(this) == "builtin"
             card.addView(
                 AppUi.listRow(
                     this,
@@ -419,6 +432,7 @@ class MainActivity : Activity() {
                     iconFg = if (on) AppUi.OK else 0xFF3C4043.toInt(),
                     onClick = {
                         val ok = IndustryPackInstaller.enable(this, e.packId)
+                        SceneProfileStore.setActivePackId(this, e.packId)
                         Toast.makeText(
                             this,
                             if (ok) "已启用 ${e.displayName}（词库增量 + 话术）" else "已启用 ${e.displayName}（话术）",
@@ -432,12 +446,219 @@ class MainActivity : Activity() {
         host.addView(card)
         host.addView(
             TextView(this).apply {
-                text = "启用后，键盘工具栏「话术」加载对应 deck；词库增量合入本地习惯表。"
+                text = "启用后键盘「话术」加载对应 deck；AI 优化按当前行业场景约束。"
                 setTextColor(AppUi.MUTED)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             },
         )
+        host.addView(
+            TextView(this).apply {
+                text = "管理自定义行业与知识库 ›"
+                setTextColor(AppUi.ACCENT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setPadding(0, dp(12), 0, 0)
+                setOnClickListener { showPage(PAGE_PHRASE) }
+            },
+        )
     }
+
+    private fun buildPhrasePage(): View =
+        pageShell("行业话术", "选择场景 · 自定义 · 知识库") {
+            val cur = SceneProfileStore.current(this@MainActivity)
+            addView(AppUi.sectionLabel(this@MainActivity, "当前场景"))
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "${cur.displayName}（${if (cur.type == "custom") "自定义" else "内置"}）\n${cur.hint}"
+                    setTextColor(AppUi.INK)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    setPadding(0, 0, 0, dp(8))
+                },
+            )
+
+            addView(AppUi.sectionLabel(this@MainActivity, "内置行业"))
+            val builtins = AppUi.card(this@MainActivity)
+            SceneProfileStore.BUILTINS.forEachIndexed { i, b ->
+                if (i > 0) builtins.addView(AppUi.divider(this@MainActivity))
+                val on = cur.type == "builtin" && cur.packId == b.packId
+                builtins.addView(
+                    AppUi.listRow(
+                        this@MainActivity,
+                        b.displayName.take(1),
+                        b.displayName,
+                        b.hint.take(36),
+                        trailing = AppUi.badge(this@MainActivity, if (on) "当前" else "选用", on),
+                        iconBg = if (on) AppUi.OK_SOFT else 0xFFE8EAED.toInt(),
+                        iconFg = if (on) AppUi.OK else 0xFF3C4043.toInt(),
+                        onClick = {
+                            IndustryPackInstaller.enable(this@MainActivity, b.packId)
+                            SceneProfileStore.setActivePackId(this@MainActivity, b.packId)
+                            Toast.makeText(this@MainActivity, "已切换到 ${b.displayName}", Toast.LENGTH_SHORT).show()
+                            showPage(PAGE_PHRASE)
+                        },
+                    ),
+                )
+            }
+            addView(builtins)
+
+            addView(AppUi.sectionLabel(this@MainActivity, "自定义行业"))
+            val nameEt = EditText(this@MainActivity).apply {
+                hint = "行业名称（如教培咨询）"
+                setText(SceneProfileStore.customRaw(this@MainActivity)?.first.orEmpty())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+            val hintEt = EditText(this@MainActivity).apply {
+                hint = "场景说明（服务谁、做什么、语气）"
+                setText(SceneProfileStore.customRaw(this@MainActivity)?.second.orEmpty())
+                minLines = 2
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+            val tabooEt = EditText(this@MainActivity).apply {
+                hint = "禁语/红线（可选）"
+                setText(SceneProfileStore.customRaw(this@MainActivity)?.third.orEmpty())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+            addView(nameEt)
+            addView(hintEt)
+            addView(tabooEt)
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "保存并启用自定义"
+                    gravity = Gravity.CENTER
+                    setTextColor(0xFFFFFFFF.toInt())
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                    background = GradientDrawable().apply {
+                        setColor(AppUi.ACCENT)
+                        cornerRadius = dp(8).toFloat()
+                    }
+                    setOnClickListener {
+                        val n = nameEt.text?.toString().orEmpty().trim()
+                        val h = hintEt.text?.toString().orEmpty().trim()
+                        if (n.isEmpty() || h.isEmpty()) {
+                            Toast.makeText(this@MainActivity, "请填写名称与场景说明", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                        SceneProfileStore.saveCustom(
+                            this@MainActivity,
+                            n,
+                            h,
+                            tabooEt.text?.toString().orEmpty(),
+                        )
+                        Toast.makeText(this@MainActivity, "已启用自定义场景", Toast.LENGTH_SHORT).show()
+                        showPage(PAGE_PHRASE)
+                    }
+                },
+            )
+
+            addView(AppUi.sectionLabel(this@MainActivity, "我的知识库（可选）"))
+            val bucket = SceneProfileStore.current(this@MainActivity).industryId
+            val kbList = PhraseKbStore.list(this@MainActivity, bucket)
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "当前桶：$bucket · ${kbList.size} 条 · ${PhraseKbStore.totalChars(this@MainActivity, bucket)} 字"
+                    setTextColor(AppUi.MUTED)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                },
+            )
+            val kbCard = AppUi.card(this@MainActivity)
+            if (kbList.isEmpty()) {
+                kbCard.addView(
+                    TextView(this@MainActivity).apply {
+                        text = "尚未导入。可粘贴店铺规则/商品说明，增强 AI 优化。"
+                        setTextColor(AppUi.MUTED)
+                        setPadding(dp(12), dp(12), dp(12), dp(12))
+                    },
+                )
+            } else {
+                kbList.forEachIndexed { i, e ->
+                    if (i > 0) kbCard.addView(AppUi.divider(this@MainActivity))
+                    kbCard.addView(
+                        AppUi.listRow(
+                            this@MainActivity,
+                            e.role.take(1),
+                            e.name,
+                            e.text.take(40),
+                            trailing = TextView(this@MainActivity).apply {
+                                text = "删除"
+                                setTextColor(0xFFD93025.toInt())
+                                setOnClickListener {
+                                    PhraseKbStore.delete(this@MainActivity, bucket, e.id)
+                                    showPage(PAGE_PHRASE)
+                                }
+                            },
+                        ),
+                    )
+                }
+            }
+            addView(kbCard)
+
+            val kbName = EditText(this@MainActivity).apply {
+                hint = "条目名称"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+            val kbBody = EditText(this@MainActivity).apply {
+                hint = "粘贴文本内容"
+                minLines = 3
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+            addView(kbName)
+            addView(kbBody)
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "导入为参考资料"
+                    gravity = Gravity.CENTER
+                    setTextColor(AppUi.ACCENT)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    setOnClickListener {
+                        val ok = PhraseKbStore.importText(
+                            this@MainActivity,
+                            bucket,
+                            kbName.text?.toString().orEmpty().ifBlank { "未命名" },
+                            kbBody.text?.toString().orEmpty(),
+                            "ref",
+                        )
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (ok) "已导入参考" else "导入失败（空内容或超限）",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        if (ok) showPage(PAGE_PHRASE)
+                    }
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "导入为硬约束（规则）"
+                    gravity = Gravity.CENTER
+                    setTextColor(0xFFD93025.toInt())
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    setOnClickListener {
+                        val ok = PhraseKbStore.importText(
+                            this@MainActivity,
+                            bucket,
+                            kbName.text?.toString().orEmpty().ifBlank { "规则" },
+                            kbBody.text?.toString().orEmpty(),
+                            "rule",
+                        )
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (ok) "已导入约束" else "导入失败（空内容或超限）",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        if (ok) showPage(PAGE_PHRASE)
+                    }
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "‹ 返回设置"
+                    setTextColor(AppUi.MUTED)
+                    setPadding(0, dp(16), 0, 0)
+                    setOnClickListener { showPage(PAGE_SETTINGS) }
+                },
+            )
+        }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun renderCampaigns(host: LinearLayout) {
         val catalog = LocalCatalog.load(this)
@@ -466,6 +687,7 @@ class MainActivity : Activity() {
                                 else -> c.phraseDeck
                             }
                             IndustryPackInstaller.enable(this, packId)
+                            SceneProfileStore.setActivePackId(this, packId)
                         }
                         Toast.makeText(this, "已应用活动皮肤与话术", Toast.LENGTH_SHORT).show()
                     },
@@ -499,20 +721,65 @@ class MainActivity : Activity() {
                 ),
             )
             input.addView(AppUi.divider(this@MainActivity))
+            val scene = SceneProfileStore.current(this@MainActivity)
+            input.addView(
+                AppUi.listRow(
+                    this@MainActivity, "话", "行业话术与知识库",
+                    "${scene.displayName} · ${if (scene.type == "custom") "自定义" else "内置"}",
+                    trailing = chevron(),
+                    iconBg = AppUi.WARM_SOFT,
+                    iconFg = AppUi.WARM,
+                    onClick = { showPage(PAGE_PHRASE) },
+                ),
+            )
+            input.addView(AppUi.divider(this@MainActivity))
             val personalOn = SettingsPrefs.personalizationEnabled(this@MainActivity)
+            val lastSum = HabitPersonaPipeline.lastSummary(this@MainActivity).ifBlank { "尚未优化" }
             input.addView(
                 AppUi.listRow(
                     this@MainActivity, "习", "个性化学习",
-                    "Normal 场景本地学词",
+                    if (personalOn) "本地学词 · BYOK 优化候选 · $lastSum" else "已关闭",
                     trailing = AppUi.badge(this@MainActivity, if (personalOn) "开" else "关", personalOn),
                     iconBg = AppUi.OK_SOFT,
                     iconFg = AppUi.OK,
-                    showDivider = false,
                     onClick = {
                         val next = !SettingsPrefs.personalizationEnabled(this@MainActivity)
                         SettingsPrefs.setPersonalization(this@MainActivity, next)
                         Toast.makeText(this@MainActivity, if (next) "已开启个性化学习" else "已关闭个性化学习", Toast.LENGTH_SHORT).show()
                         showPage(PAGE_SETTINGS)
+                    },
+                ),
+            )
+            input.addView(AppUi.divider(this@MainActivity))
+            input.addView(
+                AppUi.listRow(
+                    this@MainActivity, "优", "立即优化选词画像",
+                    "使用「AI 大模型」页配置的 Key；后台运行，不影响打字",
+                    trailing = chevron(),
+                    iconBg = AppUi.ACCENT_SOFT,
+                    iconFg = AppUi.ACCENT,
+                    showDivider = false,
+                    onClick = {
+                        when {
+                            !SettingsPrefs.personalizationEnabled(this@MainActivity) ->
+                                Toast.makeText(this@MainActivity, "请先开启个性化学习", Toast.LENGTH_SHORT).show()
+                            HabitPersonaPipeline.isRunning() ->
+                                Toast.makeText(this@MainActivity, "优化进行中…", Toast.LENGTH_SHORT).show()
+                            else -> {
+                                Toast.makeText(this@MainActivity, "开始优化…", Toast.LENGTH_SHORT).show()
+                                HabitPersonaPipeline.optimizeNowAsync(this@MainActivity) { pack ->
+                                    val msg = when {
+                                        !pack.error.isNullOrBlank() &&
+                                            pack.preferPairs.length() == 0 &&
+                                            pack.boosts.length() == 0 ->
+                                            pack.error ?: "失败"
+                                        else -> "完成：${pack.summary()}"
+                                    }
+                                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                                    showPage(PAGE_SETTINGS)
+                                }
+                            }
+                        }
                     },
                 ),
             )
@@ -829,5 +1096,6 @@ class MainActivity : Activity() {
         const val PAGE_SETTINGS = "settings"
         const val PAGE_LANGS = "langs"
         const val PAGE_LLM = "llm"
+        const val PAGE_PHRASE = "phrase"
     }
 }

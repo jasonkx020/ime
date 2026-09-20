@@ -11,6 +11,10 @@ use yc_types::{Candidate, HotResult};
 pub trait LightIntel: Send + Sync {
     fn rerank(&self, prefix: &str, candidates: Vec<Candidate>) -> HotResult<Vec<Candidate>>;
     fn set_lang(&self, _lang: &str) {}
+    /// Replace prefer_pairs table (prev → next → delta). Short critical section.
+    fn set_prefer_pairs(&self, _pairs: &[(String, String, f32)]) {}
+    /// Replace query_key\\tword → score delta (negative demote / positive boost).
+    fn set_score_deltas(&self, _items: &[(String, String, f32)]) {}
 }
 
 #[derive(Debug, Default)]
@@ -106,7 +110,7 @@ impl NgramAssocIntel {
         self.ngram.clone()
     }
 
-    /// Replace prefer_pairs table (from SyncWorker personalization pack).
+    /// Replace prefer_pairs table (from SyncWorker / on-device personalization pack).
     pub fn set_prefer_pairs(&self, pairs: &[(String, String, f32)]) {
         let mut map = HashMap::new();
         for (prev, next, delta) in pairs {
@@ -118,6 +122,11 @@ impl NgramAssocIntel {
     }
 
     pub fn set_demote(&self, items: &[(String, String, f32)]) {
+        self.set_score_deltas(items);
+    }
+
+    /// query_key + word → score delta (demote negative, boost positive).
+    pub fn set_score_deltas(&self, items: &[(String, String, f32)]) {
         let mut map = HashMap::new();
         for (qk, word, delta) in items {
             map.insert(format!("{qk}\t{word}"), *delta);
@@ -189,6 +198,14 @@ impl NgramAssocIntel {
 impl LightIntel for NgramAssocIntel {
     fn set_lang(&self, lang: &str) {
         NgramAssocIntel::set_lang(self, lang);
+    }
+
+    fn set_prefer_pairs(&self, pairs: &[(String, String, f32)]) {
+        NgramAssocIntel::set_prefer_pairs(self, pairs);
+    }
+
+    fn set_score_deltas(&self, items: &[(String, String, f32)]) {
+        NgramAssocIntel::set_score_deltas(self, items);
     }
 
     fn rerank(&self, prefix: &str, candidates: Vec<Candidate>) -> HotResult<Vec<Candidate>> {

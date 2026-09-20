@@ -158,6 +158,10 @@ int32_t yc_cold_set_callback(YcColdCallback callback);
 int32_t yc_core_sync_lang_packs(void);
 int32_t yc_core_install_langpack(const char *pack_path);
 
+/** Cold-path personalization; null/empty JSON slices are skipped. */
+int32_t yc_personalization_apply(const char *pairs_json, const char *deltas_json,
+                                 const char *boosts_json);
+
 #ifdef __cplusplus
 }
 #endif

@@ -73,6 +73,19 @@ int32_t yc_hw_apply_result(uint64_t editor_id, uint32_t count, const uint8_t *te
     return YC_OK;
 }
 
+int32_t yc_core_install_langpack(const char *pack_path) {
+    (void)pack_path;
+    return YC_OK;
+}
+
+int32_t yc_personalization_apply(const char *pairs_json, const char *deltas_json,
+                                 const char *boosts_json) {
+    (void)pairs_json;
+    (void)deltas_json;
+    (void)boosts_json;
+    return YC_OK;
+}
+
 } // extern "C"
 #endif
 
@@ -262,5 +275,24 @@ Java_com_yc_input_native_YcNative_ycHwApplyResult(
         static_cast<uint64_t>(editor_id), static_cast<uint32_t>(n), blob.data(),
         static_cast<uint32_t>(blob.size()), score_elems, static_cast<uint32_t>(flags));
     env->ReleaseFloatArrayElements(scores, score_elems, JNI_ABORT);
+    return rc;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_yc_input_native_YcNative_ycPersonalizationApply(JNIEnv *env, jclass, jstring pairs_json,
+                                                         jstring deltas_json, jstring boosts_json) {
+    const char *pairs = pairs_json ? env->GetStringUTFChars(pairs_json, nullptr) : nullptr;
+    const char *deltas = deltas_json ? env->GetStringUTFChars(deltas_json, nullptr) : nullptr;
+    const char *boosts = boosts_json ? env->GetStringUTFChars(boosts_json, nullptr) : nullptr;
+    const jint rc = yc_personalization_apply(pairs, deltas, boosts);
+    if (pairs_json && pairs) {
+        env->ReleaseStringUTFChars(pairs_json, pairs);
+    }
+    if (deltas_json && deltas) {
+        env->ReleaseStringUTFChars(deltas_json, deltas);
+    }
+    if (boosts_json && boosts) {
+        env->ReleaseStringUTFChars(boosts_json, boosts);
+    }
     return rc;
 }

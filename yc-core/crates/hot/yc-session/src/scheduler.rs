@@ -47,6 +47,28 @@ impl Scheduler {
         &self.enabled_packs
     }
 
+    /// Cold-path: atomically swap prefer_pairs / score deltas (does not touch composing).
+    pub fn apply_personalization(
+        &self,
+        pairs: &[(String, String, f32)],
+        score_deltas: &[(String, String, f32)],
+    ) {
+        self.intel.set_prefer_pairs(pairs);
+        self.intel.set_score_deltas(score_deltas);
+    }
+
+    /// Cold-path: merge LLM freq boosts into UserWordStore (short lock + flush).
+    pub fn apply_user_boosts(&self, boosts: &[(String, String, String, u32)]) {
+        if boosts.is_empty() {
+            return;
+        }
+        let store = self.factory.user_words();
+        let mut guard = store.lock();
+        for (lang, qk, word, freq) in boosts {
+            guard.apply_boost(lang, qk, word, *freq);
+        }
+    }
+
     pub fn on_pack_disabled(&mut self, pack_id: &str) {
         self.factory.unregister(pack_id);
         self.enabled_packs.retain(|p| p.pack_id != pack_id);

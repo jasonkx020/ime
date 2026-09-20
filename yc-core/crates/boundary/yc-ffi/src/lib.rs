@@ -413,3 +413,132 @@ pub extern "C" fn yc_core_install_langpack(pack_path: *const c_char) -> i32 {
         }
     })
 }
+
+/// Cold-path personalization apply. JSON arrays (UTF-8):
+/// - pairs_json: `[{"prev","next","delta"}]`
+/// - deltas_json: `[{"query_key","word","boost"}]` score deltas
+/// - boosts_json: `[{"lang","query_key","word","freq"}]` UserWordStore freq floors
+/// Null / empty string → skip that slice. Does not block or clear composing.
+#[no_mangle]
+pub extern "C" fn yc_personalization_apply(
+    pairs_json: *const c_char,
+    deltas_json: *const c_char,
+    boosts_json: *const c_char,
+) -> i32 {
+    ffi_guard(|| {
+        #[cfg(feature = "ai")]
+        {
+            fn cstr_opt(p: *const c_char) -> Option<String> {
+                if p.is_null() {
+                    return None;
+                }
+                let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            }
+            let pairs_s = cstr_opt(pairs_json);
+            let deltas_s = cstr_opt(deltas_json);
+            let boosts_s = cstr_opt(boosts_json);
+            with_core_mut(|state| {
+                let pairs_raw = pairs_s.clone().unwrap_or_else(|| "[]".into());
+                let deltas_raw = deltas_s.clone().unwrap_or_else(|| "[]".into());
+                let pairs = parse_pairs(pairs_s.as_deref().unwrap_or("[]"));
+                let deltas = parse_deltas(deltas_s.as_deref().unwrap_or("[]"));
+                let boosts = parse_boosts(boosts_s.as_deref().unwrap_or("[]"));
+                if pairs.is_err() || deltas.is_err() || boosts.is_err() {
+                    return YC_ERR_INTERNAL;
+                }
+                let pairs = pairs.unwrap();
+                let deltas = deltas.unwrap();
+                let boosts = boosts.unwrap();
+                state
+                    .services
+                    .scheduler
+                    .apply_personalization(&pairs, &deltas);
+                state.services.scheduler.apply_user_boosts(&boosts);
+                // Persist for next process start (best-effort).
+                let _ = std::fs::write(state.data_dir.join("prefer_pairs.json"), pairs_raw);
+                let _ = std::fs::write(state.data_dir.join("score_deltas.json"), deltas_raw);
+                YC_OK
+            })
+        }
+        #[cfg(not(feature = "ai"))]
+        {
+            let _ = (pairs_json, deltas_json, boosts_json);
+            YC_ERR_INTERNAL
+        }
+    })
+}
+
+#[cfg(feature = "ai")]
+pub(crate) fn parse_pairs(raw: &str) -> Result<Vec<(String, String, f32)>, ()> {
+    let v: serde_json::Value = serde_json::from_str(raw).map_err(|_| ())?;
+    let arr = v.as_array().ok_or(())?;
+    let mut out = Vec::new();
+    for e in arr.iter().take(80) {
+        let prev = e.get("prev").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let next = e.get("next").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let delta = e
+            .get("delta")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32;
+        if prev.is_empty() || next.is_empty() || !delta.is_finite() {
+            continue;
+        }
+        out.push((prev, next, delta.clamp(-5.0, 5.0)));
+    }
+    Ok(out)
+}
+
+#[cfg(feature = "ai")]
+pub(crate) fn parse_deltas(raw: &str) -> Result<Vec<(String, String, f32)>, ()> {
+    let v: serde_json::Value = serde_json::from_str(raw).map_err(|_| ())?;
+    let arr = v.as_array().ok_or(())?;
+    let mut out = Vec::new();
+    for e in arr.iter().take(80) {
+        let qk = e
+            .get("query_key")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let word = e.get("word").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let boost = e
+            .get("boost")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32;
+        if qk.is_empty() || word.is_empty() || !boost.is_finite() {
+            continue;
+        }
+        out.push((qk, word, boost.clamp(-5.0, 5.0)));
+    }
+    Ok(out)
+}
+
+#[cfg(feature = "ai")]
+fn parse_boosts(raw: &str) -> Result<Vec<(String, String, String, u32)>, ()> {
+    let v: serde_json::Value = serde_json::from_str(raw).map_err(|_| ())?;
+    let arr = v.as_array().ok_or(())?;
+    let mut out = Vec::new();
+    for e in arr.iter().take(80) {
+        let lang = e
+            .get("lang")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let qk = e
+            .get("query_key")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let word = e.get("word").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let freq = e.get("freq").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+        if qk.is_empty() || word.is_empty() || freq == 0 {
+            continue;
+        }
+        out.push((lang, qk, word, freq.min(10_000)));
+    }
+    Ok(out)
+}

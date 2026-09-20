@@ -35,6 +35,36 @@ impl CoreState {
             #[cfg(feature = "data")]
             cold,
         }
+        .load_persisted_personalization()
+    }
+
+    /// Best-effort load of on-device personalization files written by yc_personalization_apply.
+    fn load_persisted_personalization(self) -> Self {
+        #[cfg(feature = "ai")]
+        {
+            let pairs_raw =
+                std::fs::read_to_string(self.data_dir.join("prefer_pairs.json")).unwrap_or_default();
+            let deltas_raw =
+                std::fs::read_to_string(self.data_dir.join("score_deltas.json")).unwrap_or_default();
+            if !pairs_raw.trim().is_empty() || !deltas_raw.trim().is_empty() {
+                let pairs = crate::parse_pairs(if pairs_raw.trim().is_empty() {
+                    "[]"
+                } else {
+                    &pairs_raw
+                })
+                .unwrap_or_default();
+                let deltas = crate::parse_deltas(if deltas_raw.trim().is_empty() {
+                    "[]"
+                } else {
+                    &deltas_raw
+                })
+                .unwrap_or_default();
+                self.services
+                    .scheduler
+                    .apply_personalization(&pairs, &deltas);
+            }
+        }
+        self
     }
 
     pub fn begin_session(&mut self, field_id: u64, input_type: u32) -> EditorId {

@@ -31,17 +31,29 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
         val modeLabel: String,
         val input: String,
         val targetLang: String,
+        val relation: String = "",
+        val intentLabel: String = "",
+        val toneLabel: String = "",
+        val backgroundNote: String = "",
+        val userIntent: String = "",
+        val sceneId: String = "",
     )
 
     private var tokens = ThemeTokens.light()
     private val modeRow = LinearLayout(context).apply { orientation = HORIZONTAL }
+    private val relationRow = LinearLayout(context).apply { orientation = HORIZONTAL }
+    private val intentRow = LinearLayout(context).apply { orientation = HORIZONTAL }
+    private val toneRow = LinearLayout(context).apply { orientation = HORIZONTAL }
     private val input = EditText(context)
     private val status = TextView(context)
     private val results = LinearLayout(context).apply { orientation = VERTICAL }
     private val tunnelShell = FrameLayout(context)
     private val tunnelGlow = View(context)
     private val tunnelLabel = TextView(context)
-    private var selectedMode = "润色"
+    private var selectedMode = "智能回复"
+    private var selectedRelation = "客户"
+    private var selectedIntent = "再问问"
+    private var selectedTone = "默认"
     private var onGenerate: ((GenerateRequest) -> Unit)? = null
     private var onPick: ((String) -> Unit)? = null
     private var onClose: (() -> Unit)? = null
@@ -59,6 +71,17 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
     }
 
     private val modes = listOf("智能回复", "高情商", "润色", "翻译", "撰写")
+    private val relations = listOf("客户", "老板", "同事", "朋友", "家人", "恋爱", "陌生", "客服对象")
+    private val tones = listOf("默认", "更正式", "更轻松", "高情商", "更短")
+
+    private fun intentsFor(relation: String): List<String> = when (relation) {
+        "恋爱" -> listOf("接话", "调侃", "关心", "约出来", "缓和", "结束话题")
+        "客服对象" -> listOf("查进度", "改地址", "退款安抚", "转人工", "道歉", "确认需求")
+        "老板" -> listOf("汇报进展", "请示", "要资源", "给结论", "婉拒加活", "约时间")
+        "家人", "朋友" -> listOf("接话", "关心", "约出来", "安慰", "分享近况")
+        "陌生" -> listOf("自我介绍", "探需求", "约时间", "礼貌收尾")
+        else -> listOf("答应", "婉拒", "再问问", "给方案", "约时间", "催一下", "道歉")
+    }
 
     private val clearDraftActionMode = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
@@ -124,6 +147,13 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
         )
         rebuildModes()
 
+        addChipScroll(relationRow, "对谁")
+        addChipScroll(intentRow, "想怎样")
+        addChipScroll(toneRow, "语气")
+        rebuildRelation()
+        rebuildIntent()
+        rebuildTone()
+
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
         status.setTextColor(0xFF5F6368.toInt())
         status.setPadding(0, dp(2), 0, 0)
@@ -136,7 +166,7 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        input.hint = "输入或复制文本…"
+        input.hint = "复制对方消息，或点下方键盘输入…"
         input.minLines = 1
         input.maxLines = Int.MAX_VALUE
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -223,15 +253,108 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
         )
 
         tunnelShell.isClickable = true
-        tunnelShell.setOnClickListener {
-            onGenerate?.invoke(
-                GenerateRequest(
-                    modeLabel = selectedMode,
-                    input = input.text?.toString().orEmpty(),
-                    targetLang = "en",
-                ),
-            )
+        tunnelShell.setOnClickListener { fireGenerate() }
+    }
+
+    private fun fireGenerate() {
+        val ctx = compileContext()
+        onGenerate?.invoke(
+            GenerateRequest(
+                modeLabel = selectedMode,
+                input = input.text?.toString().orEmpty(),
+                targetLang = "en",
+                relation = selectedRelation,
+                intentLabel = selectedIntent,
+                toneLabel = selectedTone,
+                backgroundNote = ctx.background,
+                userIntent = ctx.intent,
+                sceneId = ctx.sceneId,
+            ),
+        )
+    }
+
+    private data class CompiledContext(
+        val background: String,
+        val intent: String,
+        val sceneId: String,
+    )
+
+    private fun compileContext(): CompiledContext {
+        val scene = when (selectedRelation) {
+            "恋爱" -> "dating"
+            "客服对象" -> "customer_followup"
+            "老板", "同事" -> "work_chat"
+            "客户" -> "customer_followup"
+            else -> "work_chat"
         }
+        val toneHint = when (selectedTone) {
+            "更正式" -> "语气偏正式、礼貌。"
+            "更轻松" -> "语气轻松自然。"
+            "高情商" -> "语气高情商、留有余地。"
+            "更短" -> "回复尽量短。"
+            else -> when (selectedRelation) {
+                "客户", "客服对象" -> "语气专业有温度。"
+                "老板" -> "简洁、尊重、结论先行。"
+                "恋爱" -> "真诚、有分寸、不油腻。"
+                "家人", "朋友" -> "亲切自然。"
+                "陌生" -> "礼貌、探需求、不施压。"
+                else -> "得体清晰。"
+            }
+        }
+        val taboo = when (selectedRelation) {
+            "客户", "客服对象" -> "不贬低竞品、不承诺未核实事项。"
+            "恋爱" -> "不油腻、不做道德绑架。"
+            "老板" -> "不推诿、不空话。"
+            else -> "不冒犯、不夸张承诺。"
+        }
+        val intentText = when (selectedIntent) {
+            "答应" -> "表示同意并推进下一步。"
+            "婉拒" -> "礼貌婉拒，尽量留后续空间。"
+            "再问问" -> "追问关键细节，便于继续推进。"
+            "给方案" -> "给出可行方案或选项。"
+            "约时间" -> "推动约定具体时间。"
+            "催一下" -> "礼貌催促，不显得强硬。"
+            "道歉" -> "真诚道歉并给补救动作。"
+            "接话" -> "自然接话，延续对话。"
+            "调侃" -> "轻度幽默调侃，把握分寸。"
+            "关心" -> "表达关心，询问近况。"
+            "约出来" -> "自然邀约见面。"
+            "缓和" -> "缓和气氛，降低对立。"
+            "结束话题" -> "得体收尾。"
+            "查进度" -> "询问处理进度。"
+            "改地址" -> "协助确认/修改地址信息。"
+            "退款安抚" -> "安抚情绪并说明退款处理。"
+            "转人工" -> "引导转人工并安抚等待。"
+            "确认需求" -> "确认用户具体需求。"
+            "汇报进展" -> "简要汇报进展与下一步。"
+            "请示" -> "请示决策并给建议选项。"
+            "要资源" -> "明确要什么资源及原因。"
+            "给结论" -> "先给结论再补依据。"
+            "婉拒加活" -> "婉拒额外工作量并给替代方案。"
+            "自我介绍" -> "简短自我介绍并说明来意。"
+            "探需求" -> "了解对方需求。"
+            "礼貌收尾" -> "礼貌结束本轮沟通。"
+            "安慰" -> "安慰对方并表示支持。"
+            "分享近况" -> "分享近况并回问对方。"
+            else -> "按「$selectedIntent」完成得体回复。"
+        }
+        val background =
+            "对象：$selectedRelation。$toneHint$taboo"
+        return CompiledContext(background, intentText, scene)
+    }
+
+    private fun addChipScroll(row: LinearLayout, contentDescription: String) {
+        val scroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            this.contentDescription = contentDescription
+            addView(row)
+        }
+        addView(
+            scroll,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(2)
+            },
+        )
     }
 
     fun setOnGenerate(listener: (GenerateRequest) -> Unit) {
@@ -259,6 +382,9 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
         if (!preselectMode.isNullOrBlank()) selectedMode = preselectMode
         if (seedText.isNotBlank()) input.setText(seedText)
         rebuildModes()
+        rebuildRelation()
+        rebuildIntent()
+        rebuildTone()
         setStatus("")
         results.removeAllViews()
         stopTunnelAnim()
@@ -397,27 +523,60 @@ class AiAssistPanel(context: Context) : LinearLayout(context) {
     }
 
     private fun rebuildModes() {
-        modeRow.removeAllViews()
-        modes.forEach { label ->
-            val on = label == selectedMode
-            modeRow.addView(
+        rebuildChipRow(modeRow, modes, selectedMode) { label ->
+            selectedMode = label
+            rebuildModes()
+        }
+    }
+
+    private fun rebuildRelation() {
+        rebuildChipRow(relationRow, relations, selectedRelation) { label ->
+            selectedRelation = label
+            val intents = intentsFor(label)
+            if (selectedIntent !in intents) selectedIntent = intents.first()
+            rebuildRelation()
+            rebuildIntent()
+        }
+    }
+
+    private fun rebuildIntent() {
+        rebuildChipRow(intentRow, intentsFor(selectedRelation), selectedIntent) { label ->
+            selectedIntent = label
+            rebuildIntent()
+        }
+    }
+
+    private fun rebuildTone() {
+        rebuildChipRow(toneRow, tones, selectedTone) { label ->
+            selectedTone = label
+            rebuildTone()
+        }
+    }
+
+    private fun rebuildChipRow(
+        row: LinearLayout,
+        labels: List<String>,
+        selected: String,
+        onClick: (String) -> Unit,
+    ) {
+        row.removeAllViews()
+        labels.forEach { label ->
+            val on = label == selected
+            row.addView(
                 TextView(context).apply {
                     text = label
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
                     setTextColor(if (on) 0xFF1A73E8.toInt() else tokens.toolbarText)
                     typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                    setPadding(dp(8), dp(3), dp(8), dp(3))
+                    setPadding(dp(7), dp(2), dp(7), dp(2))
                     background = GradientDrawable().apply {
                         setColor(if (on) 0xFFE8F0FE.toInt() else tokens.keyUtility)
                         cornerRadius = dp(6).toFloat()
                     }
-                    setOnClickListener {
-                        selectedMode = label
-                        rebuildModes()
-                    }
+                    setOnClickListener { onClick(label) }
                 },
                 LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                    rightMargin = dp(4)
+                    rightMargin = dp(3)
                 },
             )
         }

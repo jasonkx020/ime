@@ -1,6 +1,7 @@
 package com.yc.input.ui
 
 import android.content.Context
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
@@ -8,7 +9,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** 娱乐/效率入口：设置、皮肤、表情、话术、手写。 */
+/** 娱乐/效率入口：设置、皮肤、表情、话术、AI。AI 为唯一 AI 总入口。 */
 class FeatureBar(context: Context) : HorizontalScrollView(context) {
     private val row = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -17,7 +18,8 @@ class FeatureBar(context: Context) : HorizontalScrollView(context) {
     }
     private var tokens = ThemeTokens.light()
     private var onItem: ((String) -> Unit)? = null
-    private val items = listOf("设置", "皮肤", "表情", "话术", "翻译", "AI", "手写")
+    private var activeLabel: String? = null
+    private val items = listOf("设置", "皮肤", "表情", "话术", "AI")
 
     init {
         isHorizontalScrollBarEnabled = false
@@ -45,6 +47,12 @@ class FeatureBar(context: Context) : HorizontalScrollView(context) {
         }
     }
 
+    /** 单选高亮：当前使用中的入口；null 表示全部普通态。 */
+    fun setActiveItem(label: String?) {
+        activeLabel = label
+        applyActiveStyles()
+    }
+
     private fun rebuild() {
         row.removeAllViews()
         items.forEach { label ->
@@ -52,13 +60,7 @@ class FeatureBar(context: Context) : HorizontalScrollView(context) {
                 text = label
                 tag = label
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setTextColor(tokens.toolbarText)
                 setPadding(dp(12), dp(6), dp(12), dp(6))
-                background = GradientDrawable().apply {
-                    setColor(tokens.aiChipBg)
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(1), tokens.aiChipBorder)
-                }
                 setOnClickListener { onItem?.invoke(label) }
             }
             val lp = LinearLayout.LayoutParams(
@@ -67,6 +69,22 @@ class FeatureBar(context: Context) : HorizontalScrollView(context) {
             )
             lp.rightMargin = dp(8)
             row.addView(tv, lp)
+        }
+        applyActiveStyles()
+    }
+
+    private fun applyActiveStyles() {
+        for (i in 0 until row.childCount) {
+            val v = row.getChildAt(i) as? TextView ?: continue
+            val label = v.tag as? String ?: continue
+            val on = label == activeLabel
+            v.setTextColor(if (on) tokens.aiPrimaryText else tokens.toolbarText)
+            v.typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            v.background = GradientDrawable().apply {
+                setColor(if (on) tokens.aiPrimaryBg else tokens.aiChipBg)
+                cornerRadius = dp(8).toFloat()
+                if (!on) setStroke(dp(1), tokens.aiChipBorder)
+            }
         }
     }
 

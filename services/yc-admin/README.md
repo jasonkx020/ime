@@ -12,6 +12,8 @@ Go 管理后台：语言包编辑/发布、用户画像分析、输入与选词�
 | 用户画像 | 语言偏好、高频码/词、平均选词位、回删率、persona tags |
 | 选词优化 | 按选词频次与候选位次计算 boost，下发 personalization pack |
 
+**与端侧 BYOK 画像的边界**：Android 可在设备上用用户配置的 LLM（`yc_llm_byok`）异步优化 `prefer_pairs` / demote / boost，经 `yc_personalization_apply` 写入本地；**API Key 不上传本服务**。admin HabitSummarizer 仍为云端规则汇总（可选 SyncWorker 拉取），与端侧 LLM 画像并行、互不托管密钥。热路径按键/选词不得等待 LLM。
+
 ## 快速启动
 
 ```powershell

@@ -69,6 +69,13 @@ object YcNative {
     @JvmStatic external fun ycCoreInstallLangpack(packPath: String): Int
 
     /**
+     * Cold-path personalization apply (JSON arrays as UTF-8 strings).
+     * Does not block composing; next LightIntel.rerank picks up new tables.
+     */
+    @JvmStatic
+    external fun ycPersonalizationApply(pairsJson: String?, deltasJson: String?, boostsJson: String?): Int
+
+    /**
      * Push one handwriting stroke.
      * @param xyPressure interleaved [x, y, pressure] * N (normalized 0..1)
      * @param timesMs timestamp ms per point (length N)

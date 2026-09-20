@@ -12,6 +12,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import com.yc.input.handwriting.PaddleOcrEngine
+import com.yc.input.llm.HabitPersonaPipeline
 import com.yc.input.native.ArenaCommand
 import com.yc.input.native.YcNative
 import com.yc.input.speech.SpeechHost
@@ -141,13 +142,13 @@ class YcImeService : InputMethodService() {
         kb.setModePickListener { opt -> onModePicked(opt) }
         kb.setOnModeClick { onModeButtonClick() }
         kb.setOnCollapseClick { requestHideSelf(0) }
-        kb.setOnAiChipClick { chip -> Log.i(TAG, "ai chip: $chip") }
         kb.setKeyDownListener { key -> onKeyDown(key) }
         kb.setKeyUpListener { key -> onKeyUp(key) }
         applyPreferredLangFromPrefs()
         reloadLayout(currentLayoutId)
         updateModeLabel()
         updateHandwritingToolbar()
+        HabitPersonaPipeline.reloadPersisted(this)
         return kb
     }
 
@@ -711,6 +712,16 @@ class YcImeService : InputMethodService() {
         commitToEditor(text)
         stripLeakedPinyin(pinyin, text)
         submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = engineId)
+        // 冷路径：日记入队 + 可能调度画像优化（不阻塞选词）
+        val pageSize = 9
+        val approxPos = cand.page * pageSize + engineId.coerceAtLeast(0)
+        HabitPersonaPipeline.onSelect(
+            this,
+            lang = currentLangCode,
+            queryKey = pinyin,
+            word = text,
+            candidatePos = approxPos,
+        )
         // 选词后保留引擎离线联想候选，勿 ACTION_INIT / clearInputCache
         skipEditorCommands = true
         try {
@@ -757,7 +768,6 @@ class YcImeService : InputMethodService() {
                 }
             }
             "话术" -> openPhraseDeck()
-            "翻译" -> openAiAssist("翻译")
             "AI" -> openAiAssist("智能回复")
             else -> Log.i(TAG, "toolbar: $item")
         }
@@ -779,13 +789,14 @@ class YcImeService : InputMethodService() {
             val target = when (tab) {
                 "settings" -> "settings"
                 "llm", "ai" -> "llm"
-                "skins", "content", "campaigns" -> "discover"
+                "content", "phrase" -> "content"
+                "skins", "campaigns" -> "discover"
                 else -> "discover"
             }
             val intent = Intent().apply {
                 setClassName(packageName, "com.yc.input.MainActivity")
                 putExtra("tab", target)
-                if (tab in listOf("skins", "content", "campaigns")) {
+                if (tab in listOf("skins", "campaigns")) {
                     putExtra("channel", tab)
                 }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -797,28 +808,32 @@ class YcImeService : InputMethodService() {
     }
 
     private fun openPhraseDeck() {
-        val pack = when (currentLangCode) {
-            "zh" -> preferredPhrasePack()
-            else -> null
-        }
-        if (pack == null) {
-            Log.i(TAG, "no phrase deck for lang=$currentLangCode")
+        if (panel?.isPhraseDeckShowing() == true) {
+            panel?.hidePhraseDeck()
             return
         }
-        try {
-            assets.open(pack).bufferedReader().use { reader ->
-                val (title, cards) = PhraseDeckPanel.parseDeckJson(reader.readText())
-                panel?.showPhraseDeck(title, cards)
+        val scene = com.yc.input.phrase.SceneProfileStore.current(this)
+        val cards: List<com.yc.input.ui.PhraseCard>
+        val title: String
+        if (scene.type == "custom") {
+            title = scene.displayName
+            cards = com.yc.input.phrase.SceneProfileStore.customSkeletonCards(scene.displayName).map {
+                com.yc.input.ui.PhraseCard(it.first, it.second, it.third)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "load phrase deck $pack", e)
+        } else {
+            val pack = "content/${scene.packId}/phrases/deck.json"
+            try {
+                assets.open(pack).bufferedReader().use { reader ->
+                    val parsed = com.yc.input.ui.PhraseDeckPanel.parseDeckJson(reader.readText())
+                    title = parsed.first
+                    cards = parsed.second
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "load phrase deck $pack", e)
+                return
+            }
         }
-    }
-
-    private fun preferredPhrasePack(): String {
-        val enabled = getSharedPreferences("yc_content", MODE_PRIVATE)
-            .getString("active_industry", "industry-ecommerce-v1")
-        return "content/$enabled/phrases/deck.json"
+        panel?.showPhraseDeck(title, cards, scene.displayName)
     }
 
     private fun wireEntertainmentPanels(kb: YcKeyboardPanel) {
@@ -840,6 +855,32 @@ class YcImeService : InputMethodService() {
         kb.setPhrasePickListener { card ->
             commitToEditor(card.text)
             kb.hidePhraseDeck()
+        }
+        kb.setPhraseVariantPickListener { text ->
+            commitToEditor(text)
+            kb.hidePhraseDeck()
+        }
+        kb.setPhraseCloseListener { kb.hidePhraseDeck() }
+        kb.setPhraseIndustryClickListener {
+            openDiscover("content")
+        }
+        kb.setPhraseOptimizeListener { card ->
+            kb.setPhraseStatus("生成中…")
+            val peer = currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+            com.yc.input.phrase.PhraseLlmRouter.optimizeAsync(
+                this,
+                com.yc.input.phrase.PhraseOptimizeRequest(
+                    cardLabel = card.label,
+                    cardText = card.text,
+                    peerMessage = peer,
+                    intentHint = card.intentHint,
+                ),
+            ) { result ->
+                if (result.error != null && result.variants.isEmpty()) {
+                    kb.setPhraseStatus(result.error)
+                }
+                kb.showPhraseVariants(result.variants.map { it.text }, result.local)
+            }
         }
         kb.setAiAssistGenerateListener { req ->
             onAiAssistGenerate(req)
@@ -877,14 +918,17 @@ class YcImeService : InputMethodService() {
                 mode = mode,
                 selectionText = req.input,
                 peerMessage = if (mode == com.yc.input.llm.AiAssistMode.SmartReply ||
-                    mode == com.yc.input.llm.AiAssistMode.HighEqReply
+                    mode == com.yc.input.llm.AiAssistMode.HighEqReply ||
+                    mode == com.yc.input.llm.AiAssistMode.Compose
                 ) {
                     req.input
                 } else {
                     ""
                 },
-                userIntent = req.input,
+                backgroundNote = req.backgroundNote,
+                userIntent = req.userIntent.ifBlank { req.intentLabel },
                 targetLang = req.targetLang.ifBlank { targetLang },
+                sceneId = req.sceneId,
             ),
         ) { result ->
             if (result.error != null && result.variants.isEmpty()) {

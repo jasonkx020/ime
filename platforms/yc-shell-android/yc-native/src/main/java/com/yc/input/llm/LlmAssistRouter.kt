@@ -156,13 +156,19 @@ object LlmAssistRouter {
     }
 
     private fun buildPrompts(req: AiAssistRequest): Pair<String, String> {
+        val sceneHint = when (req.sceneId) {
+            "dating" -> "场景：恋爱/亲密沟通。"
+            "customer_followup" -> "场景：客户跟进或客服沟通。"
+            "work_chat" -> "场景：职场沟通。"
+            else -> ""
+        }
         val system = when (req.mode) {
             AiAssistMode.SmartReply ->
-                "你是输入法智能回复助手。根据对方消息给出 3 条得体短回复，每条一行，不要编号。"
+                "你是输入法智能回复助手。$sceneHint 根据对方消息与背景给出 3 条得体短回复，每条一行，不要编号。"
             AiAssistMode.HighEqReply ->
-                "你是高情商沟通助手。语气真诚、留有余地。输出 3 条不同风格回复，每条一行，不要编号。"
+                "你是高情商沟通助手。$sceneHint 语气真诚、留有余地。输出 3 条不同风格回复，每条一行，不要编号。"
             AiAssistMode.Compose ->
-                "你是写作助手。按用户意图撰写短文案，给出 3 个版本，每条一行，不要编号。"
+                "你是写作助手。$sceneHint 按用户意图撰写短文案，给出 3 个版本，每条一行，不要编号。"
             AiAssistMode.Rewrite ->
                 "你是改写助手。保留原意，给出 3 种不同语气的改写，每条一行，不要编号。"
             AiAssistMode.Polish ->
@@ -180,9 +186,9 @@ object LlmAssistRouter {
                     append("原文：\n").append(req.selectionText.ifBlank { req.userIntent })
                 }
                 else -> {
-                    if (req.peerMessage.isNotBlank()) append("【对方消息】\n").append(req.peerMessage).append("\n\n")
                     if (req.backgroundNote.isNotBlank()) append("【背景】\n").append(req.backgroundNote).append("\n\n")
-                    if (req.selectionText.isNotBlank()) append("【选区】\n").append(req.selectionText).append("\n\n")
+                    if (req.peerMessage.isNotBlank()) append("【对方消息】\n").append(req.peerMessage).append("\n\n")
+                    else if (req.selectionText.isNotBlank()) append("【对方消息/草稿】\n").append(req.selectionText).append("\n\n")
                     if (req.userIntent.isNotBlank()) append("【意图】\n").append(req.userIntent)
                     if (isEmpty()) append("请打个简短招呼。")
                 }

@@ -506,6 +506,7 @@ fn main() {
                     background_note: String::new(),
                     selection_text: text.trim().into(),
                     user_intent: String::new(),
+                    target_lang: String::new(),
                 };
                 let preview = svc.preview_payload(&req);
                 let _ = writeln!(stdout, "preview: {}", preview.summary);
@@ -529,6 +530,7 @@ fn main() {
                     background_note: String::new(),
                     selection_text: String::new(),
                     user_intent: String::new(),
+                    target_lang: String::new(),
                 };
                 match svc.suggest(privacy, &req) {
                     Ok(out) => {
