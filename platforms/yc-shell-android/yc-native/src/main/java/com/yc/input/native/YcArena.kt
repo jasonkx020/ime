@@ -23,6 +23,9 @@ data class ArenaSnapshot(
 
     /** status_flags bit1 = pending cloud handwriting confirm */
     val pendingCloudHw: Boolean get() = (statusFlags and 0x2) != 0
+
+    /** status_flags bit2 = need LLM pinyin candidate top-up */
+    val needsLlmFallback: Boolean get() = (statusFlags and 0x4) != 0
 }
 
 data class ArenaCandidate(val id: Int, val text: String)

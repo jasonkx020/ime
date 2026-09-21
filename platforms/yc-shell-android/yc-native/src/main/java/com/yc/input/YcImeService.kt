@@ -13,8 +13,10 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import com.yc.input.handwriting.PaddleOcrEngine
 import com.yc.input.llm.HabitPersonaPipeline
+import com.yc.input.llm.PinyinLlmFallbackRouter
 import com.yc.input.native.ArenaCommand
 import com.yc.input.native.YcNative
+import org.json.JSONArray
 import com.yc.input.speech.SpeechHost
 import com.yc.input.ui.CandidateItem
 import com.yc.input.ui.HandwritingPad
@@ -48,6 +50,32 @@ class YcImeService : InputMethodService() {
     private var clientSeq: Long = 0
     private var lastSeq: Long = -1
     private var lastComposing: String = ""
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lookupPollToken = 0
+    private val lookupPollRunnable = object : Runnable {
+        override fun run() {
+            val pollRc = try {
+                YcNative.ycHotPollLookup()
+            } catch (_: UnsatisfiedLinkError) {
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "poll lookup", e)
+                return
+            }
+            if (pollRc == 1) {
+                refreshUi()
+                maybeRequestLlmFallback()
+            }
+            // 1=updated (may have newer inflight), 2=still in-flight → keep polling.
+            // 0=idle → stop (do not spin for whole composing lifetime).
+            if (pollRc != 0 && lastComposing.isNotEmpty() && lookupPollToken > 0) {
+                mainHandler.postDelayed(this, 12)
+            } else if (pollRc == 0 && lastComposing.length >= 2) {
+                // Idle with thin/empty pool — still may need LLM top-up.
+                maybeRequestLlmFallback()
+            }
+        }
+    }
     private var lastCandidates: List<CandidateItem> = emptyList()
     private var lastCandPage: Int = 0
     private var lastTotalPages: Int = 0
@@ -91,20 +119,27 @@ class YcImeService : InputMethodService() {
     private val hwExecutor = Executors.newSingleThreadExecutor()
     private var hwEngine: PaddleOcrEngine? = null
     private val speechHost = SpeechHost(this)
+    /** 当前语言包已 sync 后，焦点路径不再碰磁盘。 */
+    @Volatile
+    private var langPacksReady = false
 
     override fun onCreate() {
         super.onCreate()
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        applyPreferredLangFromPrefs()
         if (!coreInited) {
+            val tInit = android.os.SystemClock.elapsedRealtime()
             val rc = YcNative.ycCoreInit(filesDir.absolutePath)
             coreInited = rc == YcNative.OK
-            Log.i(TAG, "ycCoreInit -> $rc")
+            Log.i(TAG, "ycCoreInit -> $rc elapsed=${android.os.SystemClock.elapsedRealtime() - tInit}ms")
             if (coreInited) {
-                ensureLangPacks()
+                ensureCurrentLangPackSync()
+                scheduleDeferredLangPacks()
             }
         }
         hwEngine = PaddleOcrEngine(applicationContext)
         hwExecutor.execute { hwEngine?.ensureLoaded() }
-        applyPreferredLangFromPrefs()
+        Log.i(TAG, "onCreate elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms lang=$currentLangCode")
     }
 
     /** 主 App「语言与布局」写入的默认语言，打开键盘时生效。 */
@@ -124,6 +159,7 @@ class YcImeService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val kb = YcKeyboardPanel(this)
         panel = kb
         kb.setKeyListener { key -> onKey(key) }
@@ -149,6 +185,7 @@ class YcImeService : InputMethodService() {
         updateModeLabel()
         updateHandwritingToolbar()
         HabitPersonaPipeline.reloadPersisted(this)
+        Log.i(TAG, "onCreateInputView elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms")
         return kb
     }
 
@@ -159,13 +196,15 @@ class YcImeService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        val t0 = android.os.SystemClock.elapsedRealtime()
         panel?.applyTheme(SkinRegistry.resolve(this))
+        Log.i(TAG, "onStartInputView elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms")
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         if (!coreInited) return
-        ensureLangPacks()
+        val t0 = android.os.SystemClock.elapsedRealtime()
         if (editorId != 0L) {
             YcNative.ycSessionStop(editorId, 0)
         }
@@ -192,8 +231,9 @@ class YcImeService : InputMethodService() {
         composingRegionEnd = -1
         panel?.setHandwritingMode(false)
         panel?.hideLangPicker()
-        submit(YcNative.ACTION_INIT)
+        // begin_session 已 Init 并写入 arena，勿再 ACTION_INIT。
         refreshUi()
+        Log.i(TAG, "onStartInput elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms restarting=$restarting")
     }
 
     override fun onFinishInput() {
@@ -339,25 +379,85 @@ class YcImeService : InputMethodService() {
         composingRegionEnd = -1
     }
 
-    /** 安装并启用中/英/越/泰语言包。 */
-    private fun ensureLangPacks() {
-        for (id in listOf("zh-pack-v1", "en-v1", "vi-v1", "th-v1")) {
-            installPackFromAssets(id)
-        }
+    /** 只同步安装当前语言包；其余语言后台补装。 */
+    private fun ensureCurrentLangPackSync() {
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val id = packIdForLang(currentLangCode)
+        installPackFromAssets(id)
         val rc = YcNative.ycCoreSyncLangPacks()
-        Log.i(TAG, "ycCoreSyncLangPacks -> $rc")
+        langPacksReady = rc == YcNative.OK
+        Log.i(
+            TAG,
+            "ensureCurrentLangPack $id sync=$rc elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms",
+        )
     }
 
-    private fun installPackFromAssets(packId: String) {
+    private fun scheduleDeferredLangPacks() {
+        val current = packIdForLang(currentLangCode)
+        val rest = listOf("zh-pack-v1", "en-v1", "vi-v1", "th-v1").filter { it != current }
+        // 放到主线程队列尾：先让 onStartInput 出键盘，再补装其余语言包。
+        mainHandler.post {
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            var any = false
+            for (id in rest) {
+                if (installPackFromAssets(id)) any = true
+            }
+            if (any) {
+                val rc = YcNative.ycCoreSyncLangPacks()
+                Log.i(TAG, "deferred lang sync -> $rc")
+            }
+            Log.i(
+                TAG,
+                "deferred packs elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms",
+            )
+        }
+    }
+
+    /** 切语言前确保目标包已安装（幂等）。 */
+    private fun ensurePackInstalled(packId: String) {
+        if (installPackFromAssets(packId)) {
+            val rc = YcNative.ycCoreSyncLangPacks()
+            Log.i(TAG, "ensurePackInstalled $packId sync=$rc")
+        }
+    }
+
+    private fun packIdForLang(code: String): String = when (code) {
+        "en" -> "en-v1"
+        "vi" -> "vi-v1"
+        "th" -> "th-v1"
+        else -> "zh-pack-v1"
+    }
+
+    /**
+     * 已解压且 stamp 与 imepack 字节数一致则跳过 copy/unzip。
+     * @return true if a fresh install ran
+     */
+    private fun installPackFromAssets(packId: String): Boolean {
         val packFile = File(filesDir, "$packId.imepack")
+        val extracted = File(filesDir, "langpacks/$packId")
+        val stamp = File(extracted, ".yc_pack_stamp")
+        val rev = "1"
         try {
-            assets.open("langpacks/$packId.imepack").use { input ->
+            if (extracted.isDirectory && stamp.isFile && packFile.isFile) {
+                val recorded = stamp.readText().trim()
+                val expect = "$rev:${packFile.length()}"
+                if (recorded == expect && extracted.list()?.isNotEmpty() == true) {
+                    Log.i(TAG, "skip install $packId ($expect)")
+                    return false
+                }
+            }
+            val copied = assets.open("langpacks/$packId.imepack").use { input ->
                 packFile.outputStream().use { output -> input.copyTo(output) }
             }
             val rc = YcNative.ycCoreInstallLangpack(packFile.absolutePath)
-            Log.i(TAG, "ycCoreInstallLangpack $packId -> $rc size=${packFile.length()}")
+            Log.i(TAG, "ycCoreInstallLangpack $packId -> $rc bytes=$copied")
+            if (extracted.isDirectory) {
+                stamp.writeText("$rev:${packFile.length()}")
+            }
+            return true
         } catch (e: Exception) {
             Log.w(TAG, "$packId not in assets", e)
+            return false
         }
     }
 
@@ -428,6 +528,7 @@ class YcImeService : InputMethodService() {
             }
             KeyAction.Space -> {
                 // th / vi / zh / en：走引擎（latin 空格 = 确认首选或上屏 composing）
+                stopLookupPoll()
                 submit(YcNative.ACTION_KEY_PRESS, key.keyCode ?: ' '.code)
                 val committed = refreshUi()
                 if (committed || !hasInputCache()) {
@@ -455,6 +556,7 @@ class YcImeService : InputMethodService() {
                             }
                         }
                         refreshUi()
+                        scheduleLookupPoll()
                     }
                     else -> {
                         val code = key.keyCode ?: text.firstOrNull()?.code ?: return
@@ -463,6 +565,7 @@ class YcImeService : InputMethodService() {
                             if (isEngineLetter(code)) {
                                 submit(YcNative.ACTION_KEY_PRESS, code)
                                 refreshUi()
+                                scheduleLookupPoll()
                             } else {
                                 currentInputConnection?.commitText(code.toChar().toString(), 1)
                             }
@@ -650,6 +753,11 @@ class YcImeService : InputMethodService() {
             lastComposing.isNotEmpty() -> {
                 submit(YcNative.ACTION_BACKSPACE)
                 refreshUi()
+                if (lastComposing.isNotEmpty()) {
+                    scheduleLookupPoll()
+                } else {
+                    stopLookupPoll()
+                }
             }
             lastCandidates.isNotEmpty() -> {
                 clearInputCache()
@@ -703,6 +811,7 @@ class YcImeService : InputMethodService() {
         }
 
         // 展开列表可能跨页：先翻到候选所在页，再按文本对齐页内 id，保证引擎 Commit/学习一致
+        stopLookupPoll()
         ensureCandPage(cand.page)
         val engineId = lastCandidates
             .indexOfFirst { it.text == text }
@@ -712,24 +821,41 @@ class YcImeService : InputMethodService() {
         commitToEditor(text)
         stripLeakedPinyin(pinyin, text)
         submit(YcNative.ACTION_SELECT_CANDIDATE, candidateId = engineId)
-        // 冷路径：日记入队 + 可能调度画像优化（不阻塞选词）
-        val pageSize = 9
-        val approxPos = cand.page * pageSize + engineId.coerceAtLeast(0)
-        HabitPersonaPipeline.onSelect(
-            this,
-            lang = currentLangCode,
-            queryKey = pinyin,
-            word = text,
-            candidatePos = approxPos,
-        )
-        // 选词后保留引擎离线联想候选，勿 ACTION_INIT / clearInputCache
+        // 选词后读 arena：可能仍有剩余拼音（搜狗式留码）
         skipEditorCommands = true
+        preferEditorDelete = false
         try {
             refreshUi()
         } finally {
             skipEditorCommands = false
         }
-        enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
+
+        val residual = lastComposing
+        val queryKey =
+            if (residual.isNotEmpty() && pinyin.endsWith(residual)) {
+                pinyin.removeSuffix(residual)
+            } else {
+                pinyin
+            }
+        val pageSize = 9
+        val approxPos = cand.page * pageSize + engineId.coerceAtLeast(0)
+        HabitPersonaPipeline.onSelect(
+            this,
+            lang = currentLangCode,
+            queryKey = queryKey,
+            word = text,
+            candidatePos = approxPos,
+        )
+
+        if (residual.isNotEmpty()) {
+            preferEditorDelete = false
+            currentInputConnection?.setComposingText(residual, 1)
+            scheduleLookupPoll()
+            pushCandSnapshot()
+            Log.i(TAG, "partial select keep composing='$residual'")
+        } else {
+            enterEditorDeleteMode(commitSucceeded = textBeforeEndsWith(text))
+        }
 
         if (candExpanded) {
             collapseCandExpand()
@@ -739,7 +865,7 @@ class YcImeService : InputMethodService() {
         val before = currentInputConnection?.getTextBeforeCursor(32, 0)
         Log.i(
             TAG,
-            "after select textBefore='$before' span=$composingRegionStart..$composingRegionEnd",
+            "after select textBefore='$before' span=$composingRegionStart..$composingRegionEnd residual='$residual'",
         )
     }
 
@@ -1217,7 +1343,8 @@ class YcImeService : InputMethodService() {
 
     private fun onCandPage(delta: Int) {
         if (delta > 0) {
-            if (lastTotalPages <= 1 || lastCandPage + 1 >= lastTotalPages) return
+            // 末页也提交 PAGE_NEXT：引擎会在 lean 池耗尽时触发 expanded 再查。
+            if (lastTotalPages <= 0 && lastCandidates.isEmpty()) return
             submit(YcNative.ACTION_PAGE_NEXT)
         } else if (delta < 0) {
             if (lastCandPage <= 0) return
@@ -1226,6 +1353,7 @@ class YcImeService : InputMethodService() {
             return
         }
         refreshUi()
+        maybeRequestLlmFallback()
     }
 
     private fun onCandExpand() {
@@ -1244,13 +1372,16 @@ class YcImeService : InputMethodService() {
     }
 
     private fun onCandNeedMore() {
-        if (lastTotalPages <= 1 || lastCandPage + 1 >= lastTotalPages) return
-        // 收起/展开均可跟手滑动：触底时追加下一页
+        if (lastCandidates.isEmpty() && expandedCandidates.isEmpty() && lastComposing.isEmpty()) {
+            return
+        }
+        // 收起/展开均可跟手滑动：触底时翻页；末页触发引擎 expanded 查询。
         if (expandedCandidates.isEmpty()) {
             appendExpanded(lastCandidates, lastCandPage)
         }
         submit(YcNative.ACTION_PAGE_NEXT)
         refreshUi()
+        maybeRequestLlmFallback()
     }
 
     private fun ensureCandPage(targetPage: Int) {
@@ -1377,7 +1508,59 @@ class YcImeService : InputMethodService() {
         }
     }
 
+    /** After composing key: 拼音立刻刷新，再短轮询后台候选（latest-wins）。 */
+    private fun scheduleLookupPoll() {
+        PinyinLlmFallbackRouter.cancel()
+        lookupPollToken++
+        val token = lookupPollToken
+        mainHandler.removeCallbacks(lookupPollRunnable)
+        mainHandler.postDelayed({
+            if (token != lookupPollToken) return@postDelayed
+            lookupPollRunnable.run()
+        }, 8)
+    }
+
+    private fun stopLookupPoll() {
+        lookupPollToken++
+        mainHandler.removeCallbacks(lookupPollRunnable)
+        PinyinLlmFallbackRouter.cancel()
+    }
+
+    /** When engine marks thin/empty pool or last page, top up via BYOK LLM. */
+    private fun maybeRequestLlmFallback() {
+        if (handwritingActive || asciiMode || currentLangCode != "zh") return
+        val query = lastComposing.trim().lowercase()
+        if (query.length < 2) return
+        val snap = try {
+            YcNative.readArena()
+        } catch (_: Throwable) {
+            null
+        } ?: return
+        if (snap.editorId != editorId) return
+        val need = snap.needsLlmFallback ||
+            (snap.composing == lastComposing && lastCandidates.size < 5 && query.length >= 2)
+        if (!need) return
+        val existing = lastCandidates.map { it.text }
+        val q = query
+        PinyinLlmFallbackRouter.requestAsync(this, q, existing) { texts ->
+            if (texts.isEmpty()) return@requestAsync
+            if (lastComposing.trim().lowercase() != q) return@requestAsync
+            val json = JSONArray(texts).toString()
+            val rc = try {
+                YcNative.ycHotInjectAiCandidates(q, json)
+            } catch (e: Throwable) {
+                Log.w(TAG, "inject ai cands", e)
+                return@requestAsync
+            }
+            if (rc == YcNative.OK) {
+                refreshUi()
+                Log.i(TAG, "llm fallback injected n=${texts.size} q=$q")
+            }
+        }
+    }
+
     private fun reloadLayout(layoutId: String) {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         currentLayoutId = layoutId
         if (layoutId != "layout_symbol" && layoutId != "layout_en_symbol") {
             letterLayoutId = layoutId
@@ -1419,6 +1602,7 @@ class YcImeService : InputMethodService() {
             viSpecialRowIndex = viSpecial,
         )
         updateModeLabel()
+        Log.i(TAG, "reloadLayout $layoutId elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms")
     }
 
     /** @return true if a non-empty Commit or DeleteSurrounding was applied */
@@ -1497,10 +1681,11 @@ class YcImeService : InputMethodService() {
         if (skipEditorCommands || preferEditorDelete) {
             // 选词后：手写 / 拼音均可能带离线联想候选，须写入 CandBar
             val inHw = handwritingActive || panel?.isHandwritingMode() == true
-            if (inHw || snap.candidates.isNotEmpty()) {
+            if (inHw || snap.candidates.isNotEmpty() || snap.composing.isNotEmpty()) {
                 applyHwCandFromSnap(snap)
                 if (!inHw) {
-                    lastComposing = ""
+                    // Partial select keeps residual composing; full select clears it.
+                    lastComposing = if (preferEditorDelete) "" else snap.composing
                 }
             } else {
                 // preferEditorDelete 且 snapshot 空：保留已有联想，勿清空 CandBar
@@ -1692,7 +1877,7 @@ class YcImeService : InputMethodService() {
         }
         when {
             opt.ascii -> {
-                // 密码/直通：挂在中文包上 ToggleAscii（不学词）
+                ensurePackInstalled("zh-pack-v1")
                 if (currentLangCode != "zh") {
                     switchLangPack("zh-pack-v1")
                 }
@@ -1704,6 +1889,7 @@ class YcImeService : InputMethodService() {
                 asciiMode = true
             }
             opt.code == "zh" -> {
+                ensurePackInstalled("zh-pack-v1")
                 switchLangPack("zh-pack-v1")
                 if (asciiMode) {
                     submit(YcNative.ACTION_TOGGLE_ASCII)
@@ -1714,6 +1900,7 @@ class YcImeService : InputMethodService() {
             }
             else -> {
                 val packId = opt.packId ?: return
+                ensurePackInstalled(packId)
                 switchLangPack(packId)
                 currentLangCode = opt.code
                 asciiMode = false

@@ -16,14 +16,18 @@ object LayoutLoader {
     private const val ACTION_SWITCH_LANG = 3
     private const val ACTION_ROW_BREAK = 5
     private const val ACTION_SHIFT = 6
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, List<List<KeyDef>>>()
 
     fun load(dataDir: File, layoutId: String): List<List<KeyDef>> {
-        if (isPinyinLayout(layoutId)) {
+        cache[layoutId]?.let { return it }
+        val rows = if (isPinyinLayout(layoutId)) {
             val fromPack = loadFromPack(dataDir, layoutId)
-            if (fromPack != null && fromPack.size >= 4) return fromPack
-            return Layout26Pinyin.rows
+            if (fromPack != null && fromPack.size >= 4) fromPack else Layout26Pinyin.rows
+        } else {
+            loadFromPack(dataDir, layoutId) ?: Layout26Pinyin.rows
         }
-        return loadFromPack(dataDir, layoutId) ?: Layout26Pinyin.rows
+        cache[layoutId] = rows
+        return rows
     }
 
     /** 仅从语言包加载；找不到返回 null（不做 QWERTY 兜底）。 */

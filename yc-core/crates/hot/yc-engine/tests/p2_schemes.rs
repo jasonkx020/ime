@@ -7,6 +7,20 @@ use yc_scheme::SchemeDesc;
 use yc_engine::InputEngine;
 use yc_types::{EditorId, LangPackEngineSpec};
 
+/// Pinyin letter keys schedule async lookup; wait before asserting candidates.
+fn await_pinyin_lookup(engine: &mut DataDrivenEngine) {
+    let _ = engine.flush_async_lookup(500);
+}
+
+fn feed_pinyin(engine: &mut DataDrivenEngine, editor: EditorId, chars: &str) {
+    for ch in chars.chars() {
+        engine
+            .feed(editor, ch as u32, &Default::default())
+            .unwrap();
+    }
+    await_pinyin_lookup(engine);
+}
+
 #[test]
 fn telex_aw_rule_from_fixture() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -83,16 +97,13 @@ fn zh_pack_nihao_candidates() {
         .unwrap();
     let editor = EditorId::from_raw(1);
     engine.reset(editor);
-    let mut last_step = None;
-    for ch in "nihao".chars() {
-        last_step = Some(
-            engine
-                .feed(editor, ch as u32, &Default::default())
-                .unwrap(),
-        );
-    }
-    let step = last_step.unwrap();
-    assert!(step.candidates.iter().any(|c| c.text == "你好"));
+    feed_pinyin(&mut engine, editor, "nihao");
+    let step = engine.current_paged_step();
+    assert!(
+        step.candidates.iter().any(|c| c.text == "你好"),
+        "nihao should include 你好, got {:?}",
+        step.candidates.iter().map(|c| &c.text).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -121,15 +132,8 @@ fn zh_pack_ta_candidates() {
         .unwrap();
     let editor = EditorId::from_raw(1);
     engine.reset(editor);
-    let mut last_step = None;
-    for ch in "ta".chars() {
-        last_step = Some(
-            engine
-                .feed(editor, ch as u32, &Default::default())
-                .unwrap(),
-        );
-    }
-    let step = last_step.unwrap();
+    feed_pinyin(&mut engine, editor, "ta");
+    let step = engine.current_paged_step();
     assert!(
         step.candidates.iter().any(|c| c.text == "他"),
         "ta should include 他, got: {:?}",
@@ -163,11 +167,7 @@ fn zh_pack_yi_paging_selects_beyond_first_page() {
         .unwrap();
     let editor = EditorId::from_raw(1);
     engine.reset(editor);
-    for ch in "yi".chars() {
-        engine
-            .feed(editor, ch as u32, &Default::default())
-            .unwrap();
-    }
+    feed_pinyin(&mut engine, editor, "yi");
     assert!(
         engine.cand_total() > 9,
         "yi pool should exceed one page, got {}",
@@ -216,11 +216,7 @@ fn zh_pack_select_ni_yields_association() {
         .unwrap();
     let editor = EditorId::from_raw(1);
     engine.reset(editor);
-    for ch in "ni".chars() {
-        engine
-            .feed(editor, ch as u32, &Default::default())
-            .unwrap();
-    }
+    feed_pinyin(&mut engine, editor, "ni");
     let page = engine.current_paged_step();
     let ni_id = page
         .candidates
@@ -270,11 +266,7 @@ fn zh_pack_polyphone_hang_xing() {
     let editor = EditorId::from_raw(1);
 
     engine.reset(editor);
-    for ch in "hang".chars() {
-        engine
-            .feed(editor, ch as u32, &Default::default())
-            .unwrap();
-    }
+    feed_pinyin(&mut engine, editor, "hang");
     assert!(
         engine
             .current_paged_step()
@@ -302,11 +294,7 @@ fn zh_pack_polyphone_hang_xing() {
     );
 
     engine.reset(editor);
-    for ch in "xing".chars() {
-        engine
-            .feed(editor, ch as u32, &Default::default())
-            .unwrap();
-    }
+    feed_pinyin(&mut engine, editor, "xing");
     let mut found_xing = false;
     let pages = ((engine.cand_total() + 8) / 9).max(1);
     for _ in 0..pages {
@@ -353,15 +341,8 @@ fn zh_pack_jianpin_nh_nihao() {
         .unwrap();
     let editor = EditorId::from_raw(1);
     engine.reset(editor);
-    let mut last = None;
-    for ch in "nh".chars() {
-        last = Some(
-            engine
-                .feed(editor, ch as u32, &Default::default())
-                .expect("jianpin feed"),
-        );
-    }
-    let step = last.unwrap();
+    feed_pinyin(&mut engine, editor, "nh");
+    let step = engine.current_paged_step();
     assert!(
         step.candidates.iter().any(|c| c.text == "你好"),
         "nh should yield 你好, got {:?}",

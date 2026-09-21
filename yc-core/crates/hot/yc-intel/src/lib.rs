@@ -250,12 +250,14 @@ mod tests {
                 text: "他们".into(),
                 source: CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             },
             Candidate {
                 id: 1,
                 text: "他".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.85,
+                code_len: 0,
             },
         ];
         let out = intel.rerank("ta", cands).unwrap();
@@ -274,12 +276,14 @@ mod tests {
                 text: "them".into(),
                 source: CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             },
             Candidate {
                 id: 1,
                 text: "you".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.5,
+                code_len: 0,
             },
         ];
         let out = intel.rerank("thank", cands).unwrap();
@@ -304,18 +308,21 @@ mod tests {
                 text: "们".into(),
                 source: CandidateSource::Hot,
                 score: 1.0,
+                code_len: 0,
             },
             Candidate {
                 id: 1,
                 text: "的".into(),
                 source: CandidateSource::Hot,
                 score: 0.9,
+                code_len: 0,
             },
             Candidate {
                 id: 2,
                 text: "好".into(),
                 source: CandidateSource::Hot,
                 score: 0.5,
+                code_len: 0,
             },
         ];
         let out = intel.rerank("你", cands).unwrap();

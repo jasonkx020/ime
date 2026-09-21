@@ -80,7 +80,7 @@ impl HotArena {
                 id: cand.id,
                 score_bits: cand.score.to_bits(),
                 text_len: text_len as u32,
-                reserved: 0,
+                reserved: cand.code_len,
                 text: [0; MAX_CAND_TEXT_LEN],
             };
             slot.text[..text_len].copy_from_slice(&text_bytes[..text_len]);

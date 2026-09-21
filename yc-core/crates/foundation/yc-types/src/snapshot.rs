@@ -19,6 +19,8 @@ pub struct Candidate {
     pub text: String,
     pub source: CandidateSource,
     pub score: f32,
+    /// Bytes of composing consumed by this candidate. `0` means full composing (legacy).
+    pub code_len: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Zeroize)]

@@ -38,6 +38,7 @@ impl OnDeviceRecognizer {
                 text: tpl.text.to_string(),
                 source: CandidateSource::Handwriting,
                 score: *score,
+                code_len: 0,
             })
             .collect();
 

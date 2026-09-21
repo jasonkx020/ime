@@ -1,7 +1,10 @@
 //! Lexicon DAT binary format (YCLX v2) + mmap + compile from TSV.
 
 mod dat;
+mod fuzzy;
+mod lookup_opts;
 mod pinyin_match;
+mod segment;
 mod typo;
 mod user_words;
 
@@ -11,9 +14,10 @@ pub use dat::{
     CharNgramModel, DatLexicon, LexiconManager, SharedCharNgram, ASSOC_MAX_SUFFIX_CHARS,
     LEXICON_MAGIC, LEXICON_VERSION,
 };
+pub use lookup_opts::{LookupCancel, LookupOpts};
 pub use pinyin_match::{
     is_complete_syllable, is_valid_pinyin_input, is_valid_prefix, key_matches_composing,
-    key_matches_jianpin, split_syllables,
+    key_matches_jianpin, mixed_slots, split_syllables, MixSlot,
 };
 pub use typo::adjacent_typo_variants;
 pub use user_words::{merge_user_boosts, merge_user_boosts_lang, UserWordStore};

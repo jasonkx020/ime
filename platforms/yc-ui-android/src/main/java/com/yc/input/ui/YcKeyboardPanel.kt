@@ -17,10 +17,21 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     private val candidatePicker = CandidatePicker(context)
     private val modePanel = ModePanel(context)
     private val voiceOverlay = VoiceOverlay(context)
-    private val skinPicker = SkinPicker(context)
-    private val emojiPanel = EmojiPanel(context)
-    private val phraseDeckPanel = PhraseDeckPanel(context)
-    private val aiAssistPanel = AiAssistPanel(context)
+    private var skinPicker: SkinPicker? = null
+    private var emojiPanel: EmojiPanel? = null
+    private var phraseDeckPanel: PhraseDeckPanel? = null
+    private var aiAssistPanel: AiAssistPanel? = null
+    private var skinPickListener: ((SkinOption) -> Unit)? = null
+    private var skinMoreListener: (() -> Unit)? = null
+    private var emojiPickListener: ((String) -> Unit)? = null
+    private var phrasePickListener: ((PhraseCard) -> Unit)? = null
+    private var phraseOptimizeListener: ((PhraseCard) -> Unit)? = null
+    private var phraseIndustryListener: (() -> Unit)? = null
+    private var phraseCloseListener: (() -> Unit)? = null
+    private var phraseVariantListener: ((String) -> Unit)? = null
+    private var aiGenerateListener: ((AiAssistPanel.GenerateRequest) -> Unit)? = null
+    private var aiPickListener: ((String) -> Unit)? = null
+    private var aiCloseListener: (() -> Unit)? = null
     private var tokens = ThemeTokens.from(context)
 
     private val toolbarCollapsedH = dp(56)
@@ -94,40 +105,7 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
                 topMargin = dp(4)
             },
         )
-        overlayHost.addView(
-            skinPicker,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP,
-            ).apply {
-                leftMargin = dp(8)
-                rightMargin = dp(8)
-                topMargin = dp(4)
-            },
-        )
-        overlayHost.addView(
-            emojiPanel,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        overlayHost.addView(
-            phraseDeckPanel,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        overlayHost.addView(
-            aiAssistPanel,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        // 候选更多面板：盖住键区，贴顶栏/AI 栏下方
+        // 皮肤 / 表情 / 话术 / AI：首次打开再创建，避免挡首帧。
         overlayHost.addView(
             candidatePicker,
             FrameLayout.LayoutParams(
@@ -405,23 +383,25 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideEntertainmentPanels()
         hideModePanel()
         hideLangPicker()
-        skinPicker.show(selectedId, tokens)
+        ensureSkinPicker().show(selectedId, tokens)
         featureBar.setActiveItem("皮肤")
     }
 
     fun hideSkinPicker() {
-        skinPicker.hide()
+        skinPicker?.hide()
         refreshFeatureActive()
     }
 
-    fun isSkinPickerShowing(): Boolean = skinPicker.isShowing()
+    fun isSkinPickerShowing(): Boolean = skinPicker?.isShowing() == true
 
     fun setSkinPickListener(listener: (SkinOption) -> Unit) {
-        skinPicker.setOnPick(listener)
+        skinPickListener = listener
+        skinPicker?.setOnPick(listener)
     }
 
     fun setSkinMoreListener(listener: () -> Unit) {
-        skinPicker.setOnMore(listener)
+        skinMoreListener = listener
+        skinPicker?.setOnMore(listener)
     }
 
     fun showEmojiPanel() {
@@ -429,22 +409,23 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideModePanel()
         hideLangPicker()
         keyView.visibility = View.GONE
-        emojiPanel.show(tokens)
+        ensureEmojiPanel().show(tokens)
         featureBar.setActiveItem("表情")
     }
 
     fun hideEmojiPanel() {
-        emojiPanel.hide()
-        if (!handwritingMode && !phraseDeckPanel.isShowing() && !aiAssistPanel.isShowing()) {
+        emojiPanel?.hide()
+        if (!handwritingMode && phraseDeckPanel?.isShowing() != true && aiAssistPanel?.isShowing() != true) {
             keyView.visibility = View.VISIBLE
         }
         refreshFeatureActive()
     }
 
-    fun isEmojiPanelShowing(): Boolean = emojiPanel.isShowing()
+    fun isEmojiPanelShowing(): Boolean = emojiPanel?.isShowing() == true
 
     fun setEmojiPickListener(listener: (String) -> Unit) {
-        emojiPanel.setOnPick(listener)
+        emojiPickListener = listener
+        emojiPanel?.setOnPick(listener)
     }
 
     fun showPhraseDeck(title: String, cards: List<PhraseCard>, industryLabel: String) {
@@ -452,44 +433,49 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideModePanel()
         hideLangPicker()
         keyView.visibility = View.GONE
-        phraseDeckPanel.show(title, cards, industryLabel, tokens)
+        ensurePhraseDeck().show(title, cards, industryLabel, tokens)
         featureBar.setActiveItem("话术")
     }
 
     fun hidePhraseDeck() {
-        phraseDeckPanel.hide()
-        if (!handwritingMode && !emojiPanel.isShowing() && !aiAssistPanel.isShowing()) {
+        phraseDeckPanel?.hide()
+        if (!handwritingMode && emojiPanel?.isShowing() != true && aiAssistPanel?.isShowing() != true) {
             keyView.visibility = View.VISIBLE
         }
         refreshFeatureActive()
     }
 
-    fun isPhraseDeckShowing(): Boolean = phraseDeckPanel.isShowing()
+    fun isPhraseDeckShowing(): Boolean = phraseDeckPanel?.isShowing() == true
 
     fun setPhrasePickListener(listener: (PhraseCard) -> Unit) {
-        phraseDeckPanel.setOnPick(listener)
+        phrasePickListener = listener
+        phraseDeckPanel?.setOnPick(listener)
     }
 
     fun setPhraseOptimizeListener(listener: (PhraseCard) -> Unit) {
-        phraseDeckPanel.setOnOptimize(listener)
+        phraseOptimizeListener = listener
+        phraseDeckPanel?.setOnOptimize(listener)
     }
 
     fun setPhraseIndustryClickListener(listener: () -> Unit) {
-        phraseDeckPanel.setOnIndustryClick(listener)
+        phraseIndustryListener = listener
+        phraseDeckPanel?.setOnIndustryClick(listener)
     }
 
     fun setPhraseCloseListener(listener: () -> Unit) {
-        phraseDeckPanel.setOnClose(listener)
+        phraseCloseListener = listener
+        phraseDeckPanel?.setOnClose(listener)
     }
 
     fun setPhraseVariantPickListener(listener: (String) -> Unit) {
-        phraseDeckPanel.setOnVariantPick(listener)
+        phraseVariantListener = listener
+        phraseDeckPanel?.setOnVariantPick(listener)
     }
 
-    fun setPhraseStatus(msg: String) = phraseDeckPanel.setStatus(msg)
+    fun setPhraseStatus(msg: String) = ensurePhraseDeck().setStatus(msg)
 
     fun showPhraseVariants(texts: List<String>, local: Boolean) {
-        phraseDeckPanel.showVariants(texts, local)
+        ensurePhraseDeck().showVariants(texts, local)
     }
 
     fun showAiAssist(preselectMode: String? = null, seedText: String = "") {
@@ -497,47 +483,50 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         hideModePanel()
         hideLangPicker()
         keyView.visibility = View.GONE
-        aiAssistPanel.show(preselectMode, seedText, tokens)
+        ensureAiAssist().show(preselectMode, seedText, tokens)
         featureBar.setActiveItem("AI")
     }
 
     fun hideAiAssist() {
-        aiAssistPanel.hide()
-        if (!handwritingMode && !emojiPanel.isShowing() && !phraseDeckPanel.isShowing()) {
+        aiAssistPanel?.hide()
+        if (!handwritingMode && emojiPanel?.isShowing() != true && phraseDeckPanel?.isShowing() != true) {
             keyView.visibility = View.VISIBLE
         }
         refreshFeatureActive()
     }
 
-    fun isAiAssistShowing(): Boolean = aiAssistPanel.isShowing()
+    fun isAiAssistShowing(): Boolean = aiAssistPanel?.isShowing() == true
 
     fun setAiAssistGenerateListener(listener: (AiAssistPanel.GenerateRequest) -> Unit) {
-        aiAssistPanel.setOnGenerate(listener)
+        aiGenerateListener = listener
+        aiAssistPanel?.setOnGenerate(listener)
     }
 
     fun setAiAssistPickListener(listener: (String) -> Unit) {
-        aiAssistPanel.setOnPick(listener)
+        aiPickListener = listener
+        aiAssistPanel?.setOnPick(listener)
     }
 
     fun setAiAssistCloseListener(listener: () -> Unit) {
-        aiAssistPanel.setOnClose(listener)
+        aiCloseListener = listener
+        aiAssistPanel?.setOnClose(listener)
     }
 
-    fun setAiAssistStatus(msg: String) = aiAssistPanel.setStatus(msg)
+    fun setAiAssistStatus(msg: String) = ensureAiAssist().setStatus(msg)
 
     fun showAiAssistVariants(texts: List<String>, local: Boolean) {
-        aiAssistPanel.showVariants(texts, local)
+        ensureAiAssist().showVariants(texts, local)
     }
 
     fun prefillAiAssist(text: String) {
-        aiAssistPanel.ingestExternalText(text)
+        ensureAiAssist().ingestExternalText(text)
     }
 
     private fun hideEntertainmentPanels() {
-        skinPicker.hide()
-        emojiPanel.hide()
-        phraseDeckPanel.hide()
-        aiAssistPanel.hide()
+        skinPicker?.hide()
+        emojiPanel?.hide()
+        phraseDeckPanel?.hide()
+        aiAssistPanel?.hide()
         if (!handwritingMode) {
             keyView.visibility = View.VISIBLE
         }
@@ -547,14 +536,72 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     private fun refreshFeatureActive() {
         val active = when {
             handwritingMode -> "手写"
-            aiAssistPanel.isShowing() -> "AI"
-            emojiPanel.isShowing() -> "表情"
-            phraseDeckPanel.isShowing() -> "话术"
-            skinPicker.isShowing() -> "皮肤"
+            aiAssistPanel?.isShowing() == true -> "AI"
+            emojiPanel?.isShowing() == true -> "表情"
+            phraseDeckPanel?.isShowing() == true -> "话术"
+            skinPicker?.isShowing() == true -> "皮肤"
             else -> null
         }
         featureBar.setActiveItem(active)
     }
+
+    private fun ensureSkinPicker(): SkinPicker {
+        skinPicker?.let { return it }
+        val p = SkinPicker(context)
+        overlayHost.addView(p, topOverlayLp())
+        skinPickListener?.let { p.setOnPick(it) }
+        skinMoreListener?.let { p.setOnMore(it) }
+        skinPicker = p
+        return p
+    }
+
+    private fun ensureEmojiPanel(): EmojiPanel {
+        emojiPanel?.let { return it }
+        val p = EmojiPanel(context)
+        overlayHost.addView(p, matchOverlayLp())
+        emojiPickListener?.let { p.setOnPick(it) }
+        emojiPanel = p
+        return p
+    }
+
+    private fun ensurePhraseDeck(): PhraseDeckPanel {
+        phraseDeckPanel?.let { return it }
+        val p = PhraseDeckPanel(context)
+        overlayHost.addView(p, matchOverlayLp())
+        phrasePickListener?.let { p.setOnPick(it) }
+        phraseOptimizeListener?.let { p.setOnOptimize(it) }
+        phraseIndustryListener?.let { p.setOnIndustryClick(it) }
+        phraseCloseListener?.let { p.setOnClose(it) }
+        phraseVariantListener?.let { p.setOnVariantPick(it) }
+        phraseDeckPanel = p
+        return p
+    }
+
+    private fun ensureAiAssist(): AiAssistPanel {
+        aiAssistPanel?.let { return it }
+        val p = AiAssistPanel(context)
+        overlayHost.addView(p, matchOverlayLp())
+        aiGenerateListener?.let { p.setOnGenerate(it) }
+        aiPickListener?.let { p.setOnPick(it) }
+        aiCloseListener?.let { p.setOnClose(it) }
+        aiAssistPanel = p
+        return p
+    }
+
+    private fun topOverlayLp() = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        Gravity.TOP,
+    ).apply {
+        leftMargin = dp(8)
+        rightMargin = dp(8)
+        topMargin = dp(4)
+    }
+
+    private fun matchOverlayLp() = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+    )
 
     override fun applyTheme(tokens: ThemeTokens) {
         this.tokens = tokens

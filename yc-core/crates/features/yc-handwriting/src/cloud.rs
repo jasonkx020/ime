@@ -15,6 +15,7 @@ impl CloudHwRecognizer for StubCloudRecognizer {
                 text: "云识别".into(),
                 source: yc_types::CandidateSource::Handwriting,
                 score: 0.85,
+                code_len: 0,
             }],
             recognized_text: Some("云识别".into()),
             confidence: 0.85,

@@ -86,6 +86,14 @@ int32_t yc_personalization_apply(const char *pairs_json, const char *deltas_json
     return YC_OK;
 }
 
+int32_t yc_hot_poll_lookup(void) { return 0; }
+
+int32_t yc_hot_inject_ai_candidates(const char *query, const char *texts_json) {
+    (void)query;
+    (void)texts_json;
+    return YC_OK;
+}
+
 } // extern "C"
 #endif
 
@@ -293,6 +301,26 @@ Java_com_yc_input_native_YcNative_ycPersonalizationApply(JNIEnv *env, jclass, js
     }
     if (boosts_json && boosts) {
         env->ReleaseStringUTFChars(boosts_json, boosts);
+    }
+    return rc;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_yc_input_native_YcNative_ycHotPollLookup(JNIEnv *, jclass) {
+    return yc_hot_poll_lookup();
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_yc_input_native_YcNative_ycHotInjectAiCandidates(JNIEnv *env, jclass, jstring query,
+                                                          jstring texts_json) {
+    const char *q = query ? env->GetStringUTFChars(query, nullptr) : nullptr;
+    const char *texts = texts_json ? env->GetStringUTFChars(texts_json, nullptr) : nullptr;
+    const jint rc = yc_hot_inject_ai_candidates(q ? q : "", texts ? texts : "[]");
+    if (query && q) {
+        env->ReleaseStringUTFChars(query, q);
+    }
+    if (texts_json && texts) {
+        env->ReleaseStringUTFChars(texts_json, texts);
     }
     return rc;
 }

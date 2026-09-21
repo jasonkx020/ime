@@ -25,7 +25,11 @@ pub fn build_langpack_dir(src: &Path, out: &Path) -> std::io::Result<PackBuildOu
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
-    let file = File::create(out)?;
+    // Write to a sibling temp file first. On Windows, File::create(out) truncates and
+    // fails with ERROR_USER_MAPPED_FILE (1224) if another process still maps `out`.
+    let tmp = out.with_extension("imepack.tmp");
+    let _ = fs::remove_file(&tmp);
+    let file = File::create(&tmp)?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
@@ -103,6 +107,8 @@ pub fn build_langpack_dir(src: &Path, out: &Path) -> std::io::Result<PackBuildOu
 
     zip.finish()?;
 
+    replace_output_file(&tmp, out)?;
+
     let sig = sha256_bytes(&fs::read(out)?);
     let sig_path = out.with_extension("imepack.sig");
     fs::write(&sig_path, &sig)?;
@@ -112,6 +118,34 @@ pub fn build_langpack_dir(src: &Path, out: &Path) -> std::io::Result<PackBuildOu
         manifest,
         signature: sig,
     })
+}
+
+/// Atomically-ish replace `out` with `tmp`. Surfaces Windows 1224 with a clear hint.
+fn replace_output_file(tmp: &Path, out: &Path) -> std::io::Result<()> {
+    if !out.exists() {
+        return fs::rename(tmp, out);
+    }
+    // Best effort: remove destination then rename. If destination is user-mapped
+    // (ERROR_USER_MAPPED_FILE = 1224), report actionable guidance.
+    match fs::remove_file(out) {
+        Ok(()) => fs::rename(tmp, out),
+        Err(e) => {
+            let _ = fs::remove_file(tmp);
+            if e.raw_os_error() == Some(1224) {
+                Err(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "cannot replace {}: file is locked/memory-mapped by another process \
+                         (close the running IME, stop cargo tests, or unlock the file). \
+                         OS error 1224",
+                        out.display()
+                    ),
+                ))
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 pub fn build_skin_dir(src: &Path, out: &Path) -> std::io::Result<SkinManifest> {

@@ -79,12 +79,15 @@ impl CoreState {
         self.services.sessions.activate(id);
         self.services.scheduler.on_session_created(id);
         self.services.handwriting.begin(id);
-        let _ = self.services.scheduler.handle(
+        if let Ok(outcome) = self.services.scheduler.handle(
             &mut self.services.sessions,
             &mut self.services.handwriting,
             id,
             UserAction::Init,
-        );
+        ) {
+            self.arena
+                .write_snapshot(&outcome.snapshot, &outcome.commands);
+        }
         id
     }
 
@@ -170,6 +173,32 @@ impl CoreState {
         }
     }
 
+    /// Append LLM pinyin candidates (`texts_json` = `["词",…]`) and refresh arena.
+    pub fn inject_ai_candidates(&mut self, query: &str, texts_json: &str) -> i32 {
+        use yc_types::{YC_ERR_BUSY, YC_ERR_INTERNAL, YC_ERR_SESSION, YC_OK};
+        let editor_id = self.services.sessions.get_active();
+        if editor_id.raw() == 0 {
+            return YC_ERR_SESSION;
+        }
+        let Some(texts) = parse_json_string_array(texts_json) else {
+            return YC_ERR_INTERNAL;
+        };
+        match self.services.scheduler.inject_ai_candidates_and_emit(
+            &mut self.services.sessions,
+            editor_id,
+            query,
+            &texts,
+        ) {
+            Ok(outcome) => {
+                self.arena
+                    .write_snapshot(&outcome.snapshot, &outcome.commands);
+                YC_OK
+            }
+            Err(yc_types::EngineError::SessionInvalid) => YC_ERR_SESSION,
+            Err(_) => YC_ERR_BUSY,
+        }
+    }
+
     #[cfg(feature = "data")]
     pub fn sync_lang_packs(&mut self) -> i32 {
         use yc_session::EnabledLangPack;
@@ -231,6 +260,26 @@ impl CoreState {
         self.services.scheduler.on_pack_disabled(pack_id);
     }
 
+    /// Apply pending async lookup into arena.
+    /// Returns 1 if candidates updated, 2 if still in-flight, 0 if idle.
+    pub fn poll_async_lookup(&mut self) -> i32 {
+        let editor_id = self.services.sessions.get_active();
+        if editor_id.raw() == 0 {
+            return 0;
+        }
+        if self
+            .services
+            .scheduler
+            .poll_async_lookup_and_emit(&mut self.services.sessions, editor_id)
+        {
+            1
+        } else if yc_engine::AsyncLookupHub::shared().has_inflight_current() {
+            2
+        } else {
+            0
+        }
+    }
+
     /// Hook for cold Skin → arena ApplyTheme; wire when cold completion notifies core.
     #[cfg(feature = "data")]
     #[allow(dead_code)]
@@ -254,4 +303,43 @@ impl CoreState {
         }];
         self.arena.write_snapshot(&snapshot, &commands);
     }
+}
+
+/// Minimal JSON string-array parser: `["a","b"]` (no nested escapes beyond `\"`).
+fn parse_json_string_array(raw: &str) -> Option<Vec<String>> {
+    let s = raw.trim();
+    if !s.starts_with('[') || !s.ends_with(']') {
+        return None;
+    }
+    let inner = &s[1..s.len() - 1];
+    let mut out = Vec::new();
+    let mut chars = inner.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                let mut buf = String::new();
+                while let Some(ch) = chars.next() {
+                    match ch {
+                        '\\' => {
+                            if let Some(esc) = chars.next() {
+                                buf.push(esc);
+                            }
+                        }
+                        '"' => break,
+                        other => buf.push(other),
+                    }
+                }
+                let t = buf.trim();
+                if !t.is_empty() {
+                    out.push(t.to_string());
+                }
+                if out.len() >= 8 {
+                    break;
+                }
+            }
+            ',' | ' ' | '\n' | '\r' | '\t' => {}
+            _ => return None,
+        }
+    }
+    Some(out)
 }

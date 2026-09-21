@@ -271,6 +271,70 @@ impl EngineFactory {
         });
     }
 
+    /// Apply background pinyin lookup if ready. Returns true when cand pool changed.
+    pub fn poll_async_lookup(&mut self) -> bool {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.poll_async_lookup(),
+                EngineSlotInner::Latin(_) => false,
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    pub fn needs_llm_fallback(&mut self) -> bool {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.needs_llm_fallback(),
+                EngineSlotInner::Latin(_) => false,
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    /// Append AI candidates for `query`. Returns false if composing mismatch.
+    pub fn inject_ai_candidates(&mut self, query: &str, texts: &[String]) -> bool {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.inject_ai_candidates(query, texts),
+                EngineSlotInner::Latin(_) => false,
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    /// Wait for in-flight lookup (space/select). Returns true if pool updated.
+    pub fn flush_async_lookup(&mut self, timeout_ms: u64) -> bool {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.flush_async_lookup(timeout_ms),
+                EngineSlotInner::Latin(_) => false,
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    /// Composing text of active engine (for rerank after poll).
+    pub fn active_composing_text(&mut self) -> String {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.composing_text().to_string(),
+                EngineSlotInner::Latin(_) => String::new(),
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    pub fn active_cand_pool_clone(&mut self) -> Vec<Candidate> {
+        self.with_active(|e| {
+            Ok(match e {
+                EngineSlotInner::DataDriven(d) => d.cand_pool_clone(),
+                EngineSlotInner::Latin(_) => Vec::new(),
+            })
+        })
+        .unwrap_or_default()
+    }
+
     pub fn page_next_active(&mut self, editor_id: EditorId) -> HotResult<EngineStep> {
         self.with_active(|e| match e {
             EngineSlotInner::Latin(l) => l.page_next(editor_id),
@@ -335,10 +399,12 @@ impl EngineFactory {
             })
             .unwrap_or_default();
         self.user_words.lock().touch_lang(&lang, pinyin, word);
+        UserWordStore::schedule_flush_shared(self.user_words.clone());
     }
 
     pub fn touch_user_word_lang(&mut self, lang: &str, query_key: &str, word: &str) {
         self.user_words.lock().touch_lang(lang, query_key, word);
+        UserWordStore::schedule_flush_shared(self.user_words.clone());
     }
 
     /// Lexicon association suffixes for `prefix`.

@@ -63,10 +63,65 @@ impl Scheduler {
             return;
         }
         let store = self.factory.user_words();
-        let mut guard = store.lock();
-        for (lang, qk, word, freq) in boosts {
-            guard.apply_boost(lang, qk, word, *freq);
+        {
+            let mut guard = store.lock();
+            for (lang, qk, word, freq) in boosts {
+                guard.apply_boost(lang, qk, word, *freq);
+            }
         }
+        yc_lexicon::UserWordStore::schedule_flush_shared(store);
+    }
+
+    /// Poll async pinyin lookup; if ready, apply prefer_pairs deltas lightly and refresh snapshot.
+    pub fn poll_async_lookup_and_emit(
+        &mut self,
+        sessions: &mut SessionManager,
+        editor_id: EditorId,
+    ) -> bool {
+        if !self.factory.poll_async_lookup() {
+            return false;
+        }
+        let composing = self.factory.active_composing_text();
+        let cands = self.factory.active_cand_pool_clone();
+        if !cands.is_empty() {
+            if let Ok(ranked) = self.intel.rerank(&composing, cands) {
+                self.factory.update_active_candidates(ranked);
+            }
+        }
+        sessions.update_composing(
+            editor_id,
+            yc_types::ComposingText {
+                text: composing.clone(),
+                cursor: composing.len() as u32,
+            },
+        );
+        let _ = self.emit_outcome(sessions, editor_id, Vec::new());
+        true
+    }
+
+    /// Append LLM candidates and emit a new snapshot. Returns false on query mismatch.
+    pub fn inject_ai_candidates_and_emit(
+        &mut self,
+        sessions: &mut SessionManager,
+        editor_id: EditorId,
+        query: &str,
+        texts: &[String],
+    ) -> Result<HotOutcome, EngineError> {
+        if !sessions.validate(editor_id) {
+            return Err(EngineError::SessionInvalid);
+        }
+        if !self.factory.inject_ai_candidates(query, texts) {
+            return Err(EngineError::Busy);
+        }
+        let composing = self.factory.active_composing_text();
+        sessions.update_composing(
+            editor_id,
+            yc_types::ComposingText {
+                text: composing.clone(),
+                cursor: composing.len() as u32,
+            },
+        );
+        self.emit_outcome(sessions, editor_id, Vec::new())
     }
 
     pub fn on_pack_disabled(&mut self, pack_id: &str) {
@@ -657,26 +712,35 @@ impl Scheduler {
             .any(|c| matches!(c, UiCommand::Commit { .. }));
 
         if has_commit {
-            // Shared association path (same as handwriting).
-            let mut ctx = self.factory.assoc_context();
-            if ctx.is_empty() {
-                ctx = step
-                    .commands
-                    .iter()
-                    .find_map(|c| match c {
-                        UiCommand::Commit { text }
-                            if !text.is_empty() && !clears_assoc_context(text) =>
-                        {
-                            Some(text.clone())
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or_default();
+            if step.composing.text.is_empty() {
+                // Full commit: shared association path (same as handwriting).
+                let mut ctx = self.factory.assoc_context();
+                if ctx.is_empty() {
+                    ctx = step
+                        .commands
+                        .iter()
+                        .find_map(|c| match c {
+                            UiCommand::Commit { text }
+                                if !text.is_empty() && !clears_assoc_context(text) =>
+                            {
+                                Some(text.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                }
+                let ranked = self.fill_association(&ctx);
+                let active = !ranked.is_empty();
+                self.factory.update_active_candidates(ranked);
+                self.factory.set_assoc_active(active);
+            } else if !step.candidates.is_empty() {
+                // Partial select with residual pinyin: keep composing candidates, no assoc.
+                let composing = step.composing.text.clone();
+                let cands = std::mem::take(&mut step.candidates);
+                if let Ok(ranked) = self.intel.rerank(&composing, cands) {
+                    self.factory.update_active_candidates(ranked);
+                }
             }
-            let ranked = self.fill_association(&ctx);
-            let active = !ranked.is_empty();
-            self.factory.update_active_candidates(ranked);
-            self.factory.set_assoc_active(active);
         } else if !step.candidates.is_empty() {
             let composing = step.composing.text.clone();
             let cands = std::mem::take(&mut step.candidates);
@@ -686,17 +750,23 @@ impl Scheduler {
         }
 
         if privacy == PrivacyLevel::Normal {
+            let residual = step.composing.text.as_str();
+            let touch_key = if !residual.is_empty() && learn_key.ends_with(residual) {
+                learn_key[..learn_key.len() - residual.len()].to_string()
+            } else {
+                learn_key.clone()
+            };
             for cmd in &step.commands {
                 if let UiCommand::Commit { text } = cmd {
-                    if !learn_key.is_empty() && !text.is_empty() {
+                    if !touch_key.is_empty() && !text.is_empty() {
                         let lang = sessions
                             .input_mode(editor_id)
                             .map(|m| m.lang_tag.clone())
                             .unwrap_or_default();
                         if lang.is_empty() {
-                            self.factory.touch_user_word(&learn_key, text);
+                            self.factory.touch_user_word(&touch_key, text);
                         } else {
-                            self.factory.touch_user_word_lang(&lang, &learn_key, text);
+                            self.factory.touch_user_word_lang(&lang, &touch_key, text);
                         }
                     }
                 }
@@ -740,6 +810,9 @@ impl Scheduler {
         status_flags |= (cand_page.min(255) << 8) | (total_pages.min(0xffff) << 16);
         if input_mode.ascii_mode {
             status_flags |= 0x1; // bit0: ascii / English mode
+        }
+        if self.factory.needs_llm_fallback() {
+            status_flags |= yc_engine::STATUS_NEEDS_LLM_FALLBACK; // bit2
         }
         let snapshot = ImmSnapshot {
             editor_id,

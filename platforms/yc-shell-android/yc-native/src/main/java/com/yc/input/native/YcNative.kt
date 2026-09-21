@@ -75,6 +75,15 @@ object YcNative {
     @JvmStatic
     external fun ycPersonalizationApply(pairsJson: String?, deltasJson: String?, boostsJson: String?): Int
 
+    /** Poll async pinyin lookup; 1 = updated, 2 = in-flight, 0 = idle. */
+    @JvmStatic external fun ycHotPollLookup(): Int
+
+    /**
+     * Append LLM pinyin candidates for [query] (must match current composing).
+     * [textsJson] is a JSON string array, e.g. `["你好","您好"]`.
+     */
+    @JvmStatic external fun ycHotInjectAiCandidates(query: String, textsJson: String): Int
+
     /**
      * Push one handwriting stroke.
      * @param xyPressure interleaved [x, y, pressure] * N (normalized 0..1)

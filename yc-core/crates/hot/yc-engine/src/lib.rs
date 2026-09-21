@@ -1,21 +1,17 @@
 //! Input engines driven by LangPack schemes and lexicons
 
+mod async_lookup;
 mod data_driven;
-
 mod factory;
-
 mod latin;
-
 mod pinyin_seg;
 
-
-
-pub use data_driven::{DataDrivenEngine, ASSOC_CANDIDATE_LIMIT};
-
+pub use async_lookup::AsyncLookupHub;
+pub use data_driven::{
+    DataDrivenEngine, ASSOC_CANDIDATE_LIMIT, LLM_FALLBACK_MIN_POOL, STATUS_NEEDS_LLM_FALLBACK,
+};
 pub use factory::EngineFactory;
-
 pub use latin::LatinPredictEngine;
-
 pub use pinyin_seg::{
     is_valid_pinyin_input, is_valid_prefix, key_matches_composing, normalize_query, split_syllables,
 };

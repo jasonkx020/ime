@@ -129,6 +129,7 @@ mod tests {
                 text: "你".into(),
                 source: yc_types::CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             }],
             status_flags: 0,
             cand_page: 0,

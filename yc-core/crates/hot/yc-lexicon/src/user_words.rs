@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use yc_types::{Candidate, CandidateSource, MAX_CANDIDATE_POOL};
@@ -13,7 +16,10 @@ pub struct UserWordStore {
     /// key = "lang\tquery_key\tword" -> freq
     freqs: HashMap<String, u32>,
     path: Option<PathBuf>,
+    dirty: bool,
 }
+
+static FLUSH_SCHEDULED: AtomicBool = AtomicBool::new(false);
 
 impl UserWordStore {
     pub fn new() -> Self {
@@ -76,7 +82,7 @@ impl UserWordStore {
         let key = entry_key(&lang, &query_key, word);
         let e = self.freqs.entry(key).or_insert(0);
         *e = e.saturating_add(1).max(1);
-        let _ = self.flush();
+        self.dirty = true;
     }
 
     /// Apply a personalization boost as absolute-ish freq (at least `freq`).
@@ -90,7 +96,54 @@ impl UserWordStore {
         let key = entry_key(&lang, &query_key, word);
         let e = self.freqs.entry(key).or_insert(0);
         *e = (*e).max(freq);
-        let _ = self.flush();
+        self.dirty = true;
+    }
+
+    /// Debounced background flush of a shared store (hot path never waits on disk).
+    pub fn schedule_flush_shared(store: Arc<Mutex<Self>>) {
+        if !FLUSH_SCHEDULED
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            return;
+        }
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(400));
+            FLUSH_SCHEDULED.store(false, Ordering::SeqCst);
+            let mut guard = store.lock();
+            if !guard.dirty {
+                return;
+            }
+            guard.dirty = false;
+            let _ = guard.flush_now();
+        });
+    }
+
+    pub fn flush(&self) -> Result<(), String> {
+        self.flush_now()
+    }
+
+    fn flush_now(&self) -> Result<(), String> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut lines = vec!["lang\tquery_key\tword\tfreq".to_string()];
+        let mut entries: Vec<_> = self.freqs.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        for (k, freq) in entries {
+            let parts: Vec<&str> = k.splitn(3, '\t').collect();
+            if parts.len() != 3 {
+                continue;
+            }
+            lines.push(format!("{}\t{}\t{}\t{freq}", parts[0], parts[1], parts[2]));
+        }
+        let tmp = path.with_extension("tsv.tmp");
+        fs::write(&tmp, lines.join("\n")).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     pub fn freq(&self, query_key: &str, word: &str) -> u32 {
@@ -136,26 +189,6 @@ impl UserWordStore {
         }
         out.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.cmp(&b.1)));
         out
-    }
-
-    pub fn flush(&self) -> Result<(), String> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let mut lines = vec!["lang\tquery_key\tword\tfreq".to_string()];
-        let mut entries: Vec<_> = self.freqs.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-        for (k, freq) in entries {
-            let parts: Vec<&str> = k.splitn(3, '\t').collect();
-            if parts.len() != 3 {
-                continue;
-            }
-            lines.push(format!("{}\t{}\t{}\t{freq}", parts[0], parts[1], parts[2]));
-        }
-        fs::write(path, lines.join("\n")).map_err(|e| e.to_string())
     }
 
     pub fn set_path(&mut self, path: PathBuf) {
@@ -214,6 +247,7 @@ pub fn merge_user_boosts_lang(
             text: word,
             source: CandidateSource::User,
             score,
+            code_len: prefix.len() as u32,
         });
     }
     candidates.sort_by(|a, b| {
@@ -249,12 +283,14 @@ mod tests {
                 text: "他们".into(),
                 source: CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             },
             Candidate {
                 id: 1,
                 text: "他".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.9,
+                code_len: 0,
             },
         ];
         let out = merge_user_boosts_lang("zh", "ta", cands, &s);
@@ -278,6 +314,7 @@ mod tests {
                 text: "the".into(),
                 source: CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             }],
             &s,
         );
@@ -296,24 +333,28 @@ mod tests {
                 text: "桃".into(),
                 source: CandidateSource::Lexicon,
                 score: 1.0,
+                code_len: 0,
             },
             Candidate {
                 id: 1,
                 text: "逃".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.999,
+                code_len: 0,
             },
             Candidate {
                 id: 2,
                 text: "陶".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.998,
+                code_len: 0,
             },
             Candidate {
                 id: 3,
                 text: "涛".into(),
                 source: CandidateSource::Lexicon,
                 score: 0.997,
+                code_len: 0,
             },
         ];
         let out = merge_user_boosts("tao", cands, &s);
@@ -327,7 +368,9 @@ mod tests {
         let _ = fs::remove_file(&path);
         {
             let store = UserWordStore::open_or_create(&path);
-            store.lock().touch_lang("zh", "tao", "陶");
+            let mut g = store.lock();
+            g.touch_lang("zh", "tao", "陶");
+            g.flush().unwrap();
         }
         let reopened = UserWordStore::open_or_create(&path);
         assert_eq!(reopened.lock().freq_lang("zh", "tao", "陶"), 1);

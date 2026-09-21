@@ -186,6 +186,7 @@ impl HandwritingService {
                 text: texts[i].clone(),
                 source: CandidateSource::Handwriting,
                 score: scores[i],
+                code_len: 0,
             })
             .collect();
         let confidence = candidates.first().map(|c| c.score).unwrap_or(0.0);

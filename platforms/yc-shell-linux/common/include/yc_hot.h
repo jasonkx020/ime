@@ -162,6 +162,16 @@ int32_t yc_core_install_langpack(const char *pack_path);
 int32_t yc_personalization_apply(const char *pairs_json, const char *deltas_json,
                                  const char *boosts_json);
 
+/** Poll async pinyin lookup; 1 = candidates updated, 2 = still in-flight, 0 = idle. */
+int32_t yc_hot_poll_lookup(void);
+
+/**
+ * Append LLM pinyin candidates for `query` (must match current composing).
+ * `texts_json` is a JSON string array, e.g. `["你好","您好"]`.
+ * Returns YC_OK on success, YC_ERR_BUSY if composing changed, YC_ERR_INTERNAL on bad JSON.
+ */
+int32_t yc_hot_inject_ai_candidates(const char *query, const char *texts_json);
+
 #ifdef __cplusplus
 }
 #endif

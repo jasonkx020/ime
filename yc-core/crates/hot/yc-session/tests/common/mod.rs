@@ -85,4 +85,12 @@ pub fn type_keys(
             )
             .expect("key");
     }
+    // Letter keys schedule async lookup; tests must wait before reading candidates.
+    await_pinyin_lookup(scheduler);
+}
+
+/// Flush latest-gen pinyin lookup into the active engine pool.
+#[allow(dead_code)]
+pub fn await_pinyin_lookup(scheduler: &mut Scheduler) {
+    let _ = scheduler.factory_mut().flush_async_lookup(500);
 }

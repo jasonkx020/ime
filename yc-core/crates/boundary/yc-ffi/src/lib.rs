@@ -542,3 +542,28 @@ fn parse_boosts(raw: &str) -> Result<Vec<(String, String, String, u32)>, ()> {
     }
     Ok(out)
 }
+
+/// Poll async pinyin lookup.
+/// Returns 1 if arena candidates were updated, 2 if lookup still in-flight, 0 if idle.
+#[no_mangle]
+pub extern "C" fn yc_hot_poll_lookup() -> i32 {
+    ffi_guard(|| with_core_mut(|state| state.poll_async_lookup()))
+}
+
+/// Append LLM candidates for `query`. `texts_json` is a JSON string array.
+#[no_mangle]
+pub extern "C" fn yc_hot_inject_ai_candidates(
+    query: *const c_char,
+    texts_json: *const c_char,
+) -> i32 {
+    ffi_guard(|| {
+        if query.is_null() || texts_json.is_null() {
+            return YC_ERR_INTERNAL;
+        }
+        let q = unsafe { CStr::from_ptr(query) }.to_string_lossy().into_owned();
+        let texts = unsafe { CStr::from_ptr(texts_json) }
+            .to_string_lossy()
+            .into_owned();
+        with_core_mut(|state| state.inject_ai_candidates(&q, &texts))
+    })
+}

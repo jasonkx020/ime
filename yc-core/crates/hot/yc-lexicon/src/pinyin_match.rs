@@ -1,5 +1,55 @@
 //! Pinyin syllable alignment for lexicon key matching (full + jianpin).
 
+/// One slot of mixed full-pinyin / initial input (`hao` + `p` + `g`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixSlot<'a> {
+    /// Longest complete syllable consumed at this position.
+    Syl(&'a str),
+    /// Single initial when no complete syllable matches.
+    Initial(char),
+}
+
+/// Greedy slots: longest syllable, otherwise one initial letter.
+/// `haopg` → `[hao, p, g]`; `nihao` → `[ni, hao]`; `hh` → `[h, h]`.
+pub fn mixed_slots<'a>(input: &'a str, syllable_table: &[String]) -> Vec<MixSlot<'a>> {
+    let input = input.trim();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < input.len() {
+        let rest = &input[i..];
+        let mut best: Option<usize> = None;
+        for syl in syllable_table {
+            if rest.starts_with(syl.as_str()) {
+                let len = syl.len();
+                if best.map_or(true, |b| len > b) {
+                    best = Some(len);
+                }
+            }
+        }
+        if let Some(len) = best {
+            out.push(MixSlot::Syl(&input[i..i + len]));
+            i += len;
+            continue;
+        }
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
+        let b = ch as u32;
+        if (b as u8 as char) == ch
+            && ch.is_ascii_lowercase()
+            && syllable_table
+                .iter()
+                .any(|s| s.as_bytes().first().copied() == Some(ch as u8))
+        {
+            out.push(MixSlot::Initial(ch));
+            i += ch.len_utf8();
+            continue;
+        }
+        break;
+    }
+    out
+}
+
 /// Greedy longest-match syllable split over `input`.
 pub fn split_syllables<'a>(input: &'a str, syllable_table: &[String]) -> Vec<&'a str> {
     let input = input.trim();
@@ -233,31 +283,10 @@ fn align_jianpin(composing: &str, key_syls: &[&str], table: &[String]) -> bool {
 }
 
 /// True when lookup should also scan non-prefix keys for jianpin hits.
-pub fn needs_jianpin_scan(composing: &str, syllable_table: &[String]) -> bool {
-    let composing = composing.trim();
-    if composing.len() < 2 {
-        return false;
-    }
-    // Pure full-pinyin progressive input can rely on DAT prefix scan alone.
-    if is_valid_prefix(composing, syllable_table) && !looks_like_jianpin(composing, syllable_table)
-    {
-        return false;
-    }
-    true
-}
-
-/// Heuristic: after some full syllables, remaining looks like initials / short pieces.
-fn looks_like_jianpin(composing: &str, table: &[String]) -> bool {
-    // If full prefix parse leaves nothing, not jianpin-only.
-    if is_valid_prefix(composing, table) {
-        // Still may be mixed like "nih" (ni + h) — valid full prefix path ends with syllable prefix "h" of hao?
-        // "nih": is_valid_prefix — ni matched, rem "h", "h" is prefix of hao/he/... → true.
-        // So is_valid_prefix("nih") is true! Then needs_jianpin_scan would be false.
-        // But "nih" is found via prefix scan of keys starting with "nih" — "nihao".starts_with("nih") ✓
-        // "nh": is_valid_prefix false → needs jianpin scan. Good.
-        return false;
-    }
-    is_valid_jianpin_prefix(composing, table)
+/// Single initial (`h`) is already covered by the prefix scan.
+/// Length ≥ 2 always scans, even when the string is also a full-pinyin prefix (`zh`, `ni`).
+pub fn needs_jianpin_scan(composing: &str, _syllable_table: &[String]) -> bool {
+    composing.trim().len() >= 2
 }
 
 #[cfg(test)]
