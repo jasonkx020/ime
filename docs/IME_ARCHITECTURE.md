@@ -495,6 +495,8 @@ KeyPress
 
 拼音 `lookup_pinyin`（table scheme）：全拼前缀 + 简拼之外，支持 **QWERTY 邻键 1-edit** 纠错（单字符替换为邻键，如 `wn`→`wm`→「我们」）；原串精确命中优先，纠错命中 score −0.08。
 
+候选与残码的字母跨度契约见 **[拼音智能分词方法论](PINYIN_SEGMENTATION.md)**（声母 / 单音节 / 多音节 / 缺字错字 → `code_len`；Seg→Gen→Rank 流水线契约同文档）。
+
 #### 3.3.3 展示策略
 
 | 规则 | 说明 |

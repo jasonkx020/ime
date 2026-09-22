@@ -89,9 +89,6 @@ class SamsungCandBar @JvmOverloads constructor(
         onNeedMore = listener
     }
 
-    private fun hasMorePages(): Boolean =
-        snapshot.totalPages > 1 && snapshot.candPage + 1 < snapshot.totalPages
-
     private fun showMoreChip(): Boolean =
         snapshot.candidates.isNotEmpty() && !snapshot.expanded
 
@@ -120,21 +117,31 @@ class SamsungCandBar @JvmOverloads constructor(
             if (!scroller.isFinished) {
                 postInvalidateOnAnimation()
             } else {
+                // Allow another end-of-pool request after fling settles (e.g. expand grew pages).
                 needMoreSent = false
             }
         }
     }
 
-    private fun maybeRequestMore() {
+    /**
+     * Near the right end of the cand row → ask shell for PAGE_NEXT.
+     * Do **not** gate on totalPages/candPage: engine only expands when PAGE_NEXT
+     * arrives on the last lean page; blocking here deadlocks expand forever.
+     */
+    private fun maybeRequestMore(pullingPastEnd: Boolean = false) {
+        if (snapshot.candidates.isEmpty()) return
         val max = maxScroll()
-        if (max > 0f &&
-            scrollOffset >= max - dp(72f) &&
-            hasMorePages() &&
-            !needMoreSent
-        ) {
-            needMoreSent = true
-            onNeedMore?.invoke()
+        // Leave the end zone → allow a later request (pool may have grown).
+        if (needMoreSent && max > 0f && scrollOffset < max - dp(120f)) {
+            needMoreSent = false
         }
+        if (needMoreSent) return
+        val nearEnd = max > 0f && scrollOffset >= max - dp(72f)
+        // Content fits (max==0): only when user pulls left past the end.
+        if (!nearEnd && !pullingPastEnd) return
+        if (max <= 0f && !pullingPastEnd) return
+        needMoreSent = true
+        onNeedMore?.invoke()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -237,9 +244,11 @@ class SamsungCandBar @JvmOverloads constructor(
                 if (dragging) {
                     val dx = event.x - lastX
                     lastX = event.x
-                    scrollOffset = (scrollOffset - dx).coerceIn(0f, maxScroll())
+                    val max = maxScroll()
+                    scrollOffset = (scrollOffset - dx).coerceIn(0f, max)
                     invalidate()
-                    maybeRequestMore()
+                    // Finger left → want more content; at end (incl. max==0) still PAGE_NEXT.
+                    maybeRequestMore(pullingPastEnd = dx < 0f && scrollOffset >= max - 0.5f)
                 }
                 return true
             }

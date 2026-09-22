@@ -65,17 +65,17 @@ object PinyinLlmFallbackRouter {
             return emptyList()
         }
 
-        val need = (5 - existing.size).coerceIn(3, 5)
+        val need = 5
         val existingHint = existing.take(12).joinToString("、")
         val system =
-            "你是中文输入法候选补全助手。根据用户输入的拼音，给出简体中文候选词或短短语。" +
-                "只输出一个 JSON 字符串数组，例如 [\"你好\",\"您好\"]，不要解释、不要 markdown。"
+            "你是中文输入法候选补全助手。根据用户输入的拼音，给出简体中文词语或短短语（优先多字词，少给单字）。" +
+                "只输出一个 JSON 字符串数组，最多 5 个，例如 [\"你好\",\"您好\"]，不要解释、不要 markdown。"
         val user = buildString {
             append("拼音：").append(query).append('\n')
             if (existingHint.isNotEmpty()) {
                 append("已有候选（勿重复）：").append(existingHint).append('\n')
             }
-            append("请再给出 ").append(need).append(" 个合适的简体候选。")
+            append("请再给出 ").append(need).append(" 个合适的简体词语候选。")
         }
 
         val body = JSONObject().apply {

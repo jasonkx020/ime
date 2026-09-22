@@ -1381,6 +1381,10 @@ class YcImeService : InputMethodService() {
         }
         submit(YcNative.ACTION_PAGE_NEXT)
         refreshUi()
+        // Expand may replace/grow the pool on the same page; merge the latest slice.
+        if (lastComposing.isNotEmpty() || candExpanded) {
+            appendExpanded(lastCandidates, lastCandPage)
+        }
         maybeRequestLlmFallback()
     }
 
@@ -1526,7 +1530,7 @@ class YcImeService : InputMethodService() {
         PinyinLlmFallbackRouter.cancel()
     }
 
-    /** When engine marks thin/empty pool or last page, top up via BYOK LLM. */
+    /** When engine marks needsLlmFallback, top up via BYOK LLM (tiered L1/L2/span). */
     private fun maybeRequestLlmFallback() {
         if (handwritingActive || asciiMode || currentLangCode != "zh") return
         val query = lastComposing.trim().lowercase()
@@ -1537,10 +1541,10 @@ class YcImeService : InputMethodService() {
             null
         } ?: return
         if (snap.editorId != editorId) return
-        val need = snap.needsLlmFallback ||
-            (snap.composing == lastComposing && lastCandidates.size < 5 && query.length >= 2)
-        if (!need) return
-        val existing = lastCandidates.map { it.text }
+        // Trust engine flag only (L0→L1 always; L2/L3/L4 per engine wave). No size<5 gate.
+        if (!snap.needsLlmFallback) return
+        val existing = (if (expandedCandidates.isNotEmpty()) expandedCandidates else lastCandidates)
+            .map { it.text }
         val q = query
         PinyinLlmFallbackRouter.requestAsync(this, q, existing) { texts ->
             if (texts.isEmpty()) return@requestAsync
@@ -1555,6 +1559,10 @@ class YcImeService : InputMethodService() {
             if (rc == YcNative.OK) {
                 refreshUi()
                 Log.i(TAG, "llm fallback injected n=${texts.size} q=$q")
+                // Chain L2 / empty-span waves without stacking the call stack.
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    maybeRequestLlmFallback()
+                }
             }
         }
     }

@@ -289,6 +289,42 @@ pub fn needs_jianpin_scan(composing: &str, _syllable_table: &[String]) -> bool {
     composing.trim().len() >= 2
 }
 
+/// Bare finals that normally need an initial; skip as standalone edges when lexicon-empty.
+pub fn is_orphan_final(syl: &str) -> bool {
+    matches!(syl.trim().to_ascii_lowercase().as_str(), "i" | "u" | "v" | "ü")
+}
+
+/// Byte offsets where a new syllable may start (after a complete syllable, or at 0).
+/// Used to prefer longest-syllable cuts between initials.
+pub fn syllable_start_anchors(input: &str, syllable_table: &[String]) -> Vec<usize> {
+    let input = input.trim();
+    let n = input.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut anchors = vec![0usize];
+    let mut reach = vec![false; n + 1];
+    reach[0] = true;
+    for i in 0..n {
+        if !reach[i] {
+            continue;
+        }
+        let rest = &input[i..];
+        for syl in syllable_table {
+            if !syl.is_empty() && rest.starts_with(syl.as_str()) {
+                let j = i + syl.len();
+                reach[j] = true;
+                if j < n {
+                    anchors.push(j);
+                }
+            }
+        }
+    }
+    anchors.sort_unstable();
+    anchors.dedup();
+    anchors
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

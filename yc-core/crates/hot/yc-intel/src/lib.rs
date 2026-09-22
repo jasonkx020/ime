@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use yc_lexicon::{merge_user_boosts_lang, SharedCharNgram, UserWordStore};
+use yc_lexicon::{
+    merge_user_boosts_lang, rank_candidates, SharedCharNgram, UserWordStore,
+};
 use yc_types::{Candidate, HotResult};
 
 pub trait LightIntel: Send + Sync {
@@ -159,15 +161,7 @@ impl NgramAssocIntel {
                 c.score += delta;
             }
         }
-        candidates.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.text.cmp(&b.text))
-        });
-        for (i, c) in candidates.iter_mut().enumerate() {
-            c.id = i as u32;
-        }
+        rank_candidates(&mut candidates);
         candidates
     }
 
@@ -175,22 +169,13 @@ impl NgramAssocIntel {
         if !self.ngram.has_model() || candidates.is_empty() {
             return candidates;
         }
-        candidates.sort_by(|a, b| {
-            let la = a.text.chars().count();
-            let lb = b.text.chars().count();
-            let sa = self.ngram.continuation_score(prefix, &a.text) + a.score * 0.01
-                - (la.saturating_sub(1) as f32) * 2.0;
-            let sb = self.ngram.continuation_score(prefix, &b.text) + b.score * 0.01
-                - (lb.saturating_sub(1) as f32) * 2.0;
-            sb.partial_cmp(&sa)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| la.cmp(&lb))
-                .then_with(|| a.text.cmp(&b.text))
-        });
-        for (i, c) in candidates.iter_mut().enumerate() {
-            c.id = i as u32;
-            c.score = 1.0 - (i as f32 * 0.001);
+        // Fold ngram into score; final order only via rank_candidates.
+        for c in &mut candidates {
+            let la = c.text.chars().count();
+            let ngram = self.ngram.continuation_score(prefix, &c.text);
+            c.score = ngram + c.score * 0.01 - (la.saturating_sub(1) as f32) * 2.0;
         }
+        rank_candidates(&mut candidates);
         candidates
     }
 }

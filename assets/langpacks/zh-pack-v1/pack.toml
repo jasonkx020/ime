@@ -15,5 +15,9 @@ file = "lexicon/zh_words.tsv"
 format = "dat"
 key_column = "pinyin"
 
+# Scheme-level fuzzy; keyboard_neighbors live on each layout YAML.
+[correction]
+fuzzy = "rules/pinyin_fuzzy.yaml"
+
 [build]
 strings = "strings/zh.json"

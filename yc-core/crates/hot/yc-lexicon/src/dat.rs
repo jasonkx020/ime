@@ -8,7 +8,12 @@ use parking_lot::Mutex;
 use yc_types::{Candidate, CandidateSource, EngineError, HotResult, MAX_CANDIDATE_POOL};
 
 use crate::lookup_opts::{LookupCancel, LookupOpts};
-use crate::user_words::{merge_user_boosts_lang, UserWordStore};
+use crate::preprocess::preprocess_pinyin;
+use crate::rank::{as_correction_score, rank_candidates};
+use crate::seg_hypotheses::{build_seg_hypotheses_ex, SegmentMode};
+use crate::span_resolve::attach_spans;
+use crate::user_words::{merge_user_boosts_lang, merge_user_boosts_lang_syls, UserWordStore};
+use crate::correction::{correction_variants, CorrectionTables};
 use crate::LangLexiconHandle;
 
 pub const LEXICON_MAGIC: &[u8; 4] = b"YCLX";
@@ -381,6 +386,11 @@ impl DatLexicon {
     }
 
     /// Exact DAT key → all (freq, word) payloads (empty if key missing).
+    pub fn exact_key_words_pub(&self, key: &str) -> Vec<(u32, String)> {
+        self.exact_key_words(key)
+    }
+
+    /// Exact DAT key → all (freq, word) payloads (empty if key missing).
     pub(crate) fn exact_key_words(&self, key: &str) -> Vec<(u32, String)> {
         if key.is_empty() {
             return Vec::new();
@@ -473,15 +483,37 @@ impl DatLexicon {
         mine: u64,
         opts: LookupOpts,
     ) -> Option<Vec<Candidate>> {
-        let composing = composing.trim().to_ascii_lowercase();
+        self.lookup_pinyin_opts_ex(composing, syllables, cancel, mine, opts, None)
+    }
+
+    /// Like [`lookup_pinyin_opts`] with explicit correction tables (tests / pack).
+    pub fn lookup_pinyin_opts_ex(
+        &self,
+        composing_raw: &str,
+        syllables: &[String],
+        cancel: Option<&LookupCancel>,
+        mine: u64,
+        opts: LookupOpts,
+        tables: Option<&CorrectionTables>,
+    ) -> Option<Vec<Candidate>> {
+        let pre = preprocess_pinyin(composing_raw, syllables);
+        let composing = pre.key;
         if composing.is_empty() {
             return Some(Vec::new());
         }
         if cancel.is_some_and(|c| c.is_canceled(mine)) {
             return None;
         }
+        let tables_owned;
+        let tables: &CorrectionTables = match tables {
+            Some(t) => t,
+            None => {
+                tables_owned = CorrectionTables::builtin_fallback();
+                &tables_owned
+            }
+        };
 
-        // (freq, jianpin_only, class) class: 0 exact, 1 fuzzy, 2 typo
+        // (freq, jianpin_only, class) class: 0 exact, 1 fuzzy, 2 typo, 3 edit1
         let mut best: std::collections::HashMap<String, (u32, bool, u8)> =
             std::collections::HashMap::new();
 
@@ -521,42 +553,42 @@ impl DatLexicon {
             return None;
         }
 
-        if opts.enable_fuzzy && composing.len() >= 4 && opts.fuzzy_variant_cap > 0 {
-            for variant in crate::fuzzy::fuzzy_variants(&composing, opts.fuzzy_variant_cap) {
-                if cancel.is_some_and(|c| c.is_canceled(mine)) {
-                    return None;
-                }
-                let hits = self.lookup_pinyin_one(
-                    &variant,
-                    syllables,
-                    opts.enable_jianpin,
-                    opts.skip_jianpin_if_exact_ge,
-                    opts.pool_limit,
-                    cancel,
-                    mine,
-                )?;
-                for (freq, word, jianpin_only) in hits {
-                    merge_hit(&mut best, freq, word, jianpin_only, 1);
-                }
-            }
-        }
-
-        if opts.enable_typo
-            && composing.len() >= opts.typo_min_len
-            && best.len() < opts.typo_max_hits
-            && opts.typo_variant_cap > 0
-        {
-            for variant in crate::typo::adjacent_typo_variants(&composing)
-                .into_iter()
-                .take(opts.typo_variant_cap)
+        let want_correct = opts.enable_fuzzy || opts.enable_typo || opts.enable_edit1;
+        if want_correct && composing.len() >= opts.typo_min_len {
+            let fuzzy_cap = if opts.enable_fuzzy {
+                opts.fuzzy_variant_cap
+            } else {
+                0
+            };
+            let typo_cap = if opts.enable_typo
+                && best.len() < opts.typo_max_hits
             {
+                opts.typo_variant_cap
+            } else {
+                0
+            };
+            let edit_cap = if opts.enable_edit1
+                && composing.len() >= 3
+                && (best.is_empty() || best.len() < opts.typo_max_hits)
+            {
+                opts.edit1_variant_cap
+            } else {
+                0
+            };
+
+            for (variant, class) in correction_variants(
+                &composing,
+                tables,
+                fuzzy_cap,
+                typo_cap,
+                edit_cap,
+            ) {
                 if cancel.is_some_and(|c| c.is_canceled(mine)) {
                     return None;
                 }
-                if best.len() >= opts.pool_limit {
+                if best.len() >= opts.pool_limit.saturating_mul(2) {
                     break;
                 }
-                // Typo variants are often jianpin-shaped (wm→women); prefix scan alone misses them.
                 let hits = self.lookup_pinyin_one(
                     &variant,
                     syllables,
@@ -567,7 +599,7 @@ impl DatLexicon {
                     mine,
                 )?;
                 for (freq, word, jianpin_only) in hits {
-                    merge_hit(&mut best, freq, word, jianpin_only, 2);
+                    merge_hit(&mut best, freq, word, jianpin_only, class);
                 }
             }
         }
@@ -588,20 +620,37 @@ impl DatLexicon {
         });
 
         let limit = opts.pool_limit.min(MAX_CANDIDATE_POOL);
-        let mut cands: Vec<Candidate> = collected
+        let has_exact_full = !self.exact_key_words(&composing).is_empty();
+
+        let mode = opts.segment_mode;
+        let hyps = build_seg_hypotheses_ex(&composing, syllables, mode, &pre.hard_breaks);
+
+        let mut cands: Vec<Candidate> = Vec::new();
+        if !has_exact_full {
+            gen_structural(self, &composing, syllables, cancel, mine, mode, &hyps, &mut cands)?;
+        }
+
+        let noise_budget = if has_exact_full {
+            limit
+        } else {
+            limit.max(16)
+        };
+        let noise: Vec<Candidate> = collected
             .into_iter()
-            .take(limit)
+            .take(noise_budget)
             .enumerate()
             .map(|(i, (_freq, text, jianpin_only, class))| {
-                let mut base = 1.0 - (i as f32 * 0.001);
-                if jianpin_only {
-                    base -= 0.05;
-                }
-                if class == 1 {
-                    base -= 0.06;
-                } else if class == 2 {
-                    base -= 0.08;
-                }
+                let base = if class == 0 && !jianpin_only {
+                    crate::cand_tiers::score_l0(i)
+                } else if class > 0 {
+                    as_correction_score(
+                        (crate::cand_tiers::SCORE_L3 - 0.02 - i as f32 * 0.001).max(0.70),
+                    )
+                } else if jianpin_only {
+                    (crate::cand_tiers::SCORE_L3 - 0.02 - i as f32 * 0.001).max(0.72)
+                } else {
+                    crate::cand_tiers::score_l0(i)
+                };
                 Candidate {
                     id: i as u32,
                     text,
@@ -612,12 +661,25 @@ impl DatLexicon {
             })
             .collect();
 
-        if crate::pinyin_match::is_complete_syllable(&composing, syllables) {
-            prefer_single_char_candidates(&mut cands);
+        if has_exact_full {
+            cands = noise;
+            if crate::pinyin_match::is_complete_syllable(&composing, syllables) {
+                prefer_single_char_candidates(&mut cands);
+            }
+            gen_structural(self, &composing, syllables, cancel, mine, mode, &hyps, &mut cands)?;
+        } else {
+            for n in noise {
+                if let Some(existing) = cands.iter_mut().find(|c| c.text == n.text) {
+                    if n.score > existing.score {
+                        existing.score = n.score;
+                    }
+                    continue;
+                }
+                cands.push(n);
+            }
         }
-        if opts.enable_segment {
-            crate::segment::merge_composed(self, &composing, syllables, cancel, mine, &mut cands)?;
-        }
+        attach_spans(self, &composing, syllables, &mut cands);
+        rank_candidates(&mut cands);
         Some(cands)
     }
 
@@ -773,6 +835,37 @@ impl DatLexicon {
                 code_len: 0,
             })
             .collect()
+    }
+}
+
+/// Gen: structural candidates from Seg hypotheses / lattice (shared Instant+Lean path).
+fn gen_structural(
+    lex: &DatLexicon,
+    composing: &str,
+    syllables: &[String],
+    cancel: Option<&LookupCancel>,
+    mine: u64,
+    mode: SegmentMode,
+    hyps: &crate::seg_hypotheses::SegHypotheses,
+    cands: &mut Vec<Candidate>,
+) -> Option<()> {
+    match mode {
+        SegmentMode::Off => Some(()),
+        SegmentMode::FirstSyllable => {
+            crate::cand_gen::gen_from_hyps(lex, composing, hyps, cands);
+            Some(())
+        }
+        SegmentMode::Full | SegmentMode::FullFine => {
+            crate::segment::merge_composed_ex(
+                lex,
+                composing,
+                syllables,
+                cancel,
+                mine,
+                cands,
+                mode == SegmentMode::FullFine,
+            )
+        }
     }
 }
 
@@ -1064,17 +1157,35 @@ impl LexiconManager {
             return None;
         }
         if self.user_words.is_some() {
-            cands = self.apply_user_boosts(composing, cands);
+            cands = self.apply_user_boosts(composing, cands, syllables);
+        }
+        if let Some(lex) = self.active_lexicon_arc() {
+            attach_spans(&lex, composing, syllables, &mut cands);
         }
         Some(cands)
     }
 
     /// Re-apply learned words after a raw DAT pool replace (async poll / flush).
-    pub fn apply_user_boosts(&self, composing: &str, cands: Vec<Candidate>) -> Vec<Candidate> {
+    pub fn apply_user_boosts(
+        &self,
+        composing: &str,
+        cands: Vec<Candidate>,
+        syllables: &[String],
+    ) -> Vec<Candidate> {
         let Some(store) = &self.user_words else {
             return cands;
         };
-        merge_user_boosts_lang(self.active_lang(), composing, cands, &store.lock())
+        let mut cands = merge_user_boosts_lang_syls(
+            self.active_lang(),
+            composing,
+            cands,
+            &store.lock(),
+            Some(syllables),
+        );
+        if let Some(lex) = self.active_lexicon_arc() {
+            attach_spans(&lex, composing, syllables, &mut cands);
+        }
+        cands
     }
 
     /// Cheap Arc clone of active DAT for background lookup threads.
@@ -1659,7 +1770,7 @@ word\tfreq\tpinyin
             raw.iter().all(|c| c.text != "你好呀"),
             "raw DAT must not invent 你好呀"
         );
-        let merged = mgr.apply_user_boosts("nihy", raw);
+        let merged = mgr.apply_user_boosts("nihy", raw, &syls);
         assert_eq!(merged[0].text, "你好呀");
         assert_eq!(merged[0].code_len, 4);
         let _ = std::fs::remove_dir_all(dir);
@@ -1770,5 +1881,90 @@ word\tfreq\tpinyin
             "idiom junk with 我 should be gone: {:?}",
             cands.iter().map(|c| &c.text).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn instant_liuchang_liu_char_code_len_is_3() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_instant_liuchang.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+流\t80000\tliu
+畅\t70000\tchang
+流畅\t95000\tliuchang
+淘\t90000\ttao
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let dat = compile_tsv_to_dat(&tmp).unwrap();
+        let lex = DatLexicon::from_bytes(dat).unwrap();
+        let syls = vec!["tao".into(), "liu".into(), "chang".into()];
+        let cands = lex
+            .lookup_pinyin_opts("liuchang", &syls, None, 0, LookupOpts::instant())
+            .unwrap();
+        let liu = cands.iter().find(|c| c.text == "流").expect("流 on instant");
+        assert_eq!(
+            liu.code_len, 3,
+            "instant first-syl 流 code_len={}",
+            liu.code_len
+        );
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn lean_nuhao_typo_finds_nihao() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_nuhao.tsv");
+        std::fs::write(
+            &tmp,
+            "word\tfreq\tpinyin\n你好\t90000\tnihao\n怒\t1000\tnu\n",
+        )
+        .unwrap();
+        let lex = DatLexicon::from_bytes(compile_tsv_to_dat(&tmp).unwrap()).unwrap();
+        let syls = vec!["ni".into(), "hao".into(), "nu".into()];
+        let cands = lex
+            .lookup_pinyin_opts("nuhao", &syls, None, 0, LookupOpts::lean())
+            .unwrap();
+        assert!(
+            cands.iter().any(|c| c.text == "你好"),
+            "nuhao typo → 你好: {:?}",
+            cands.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn lean_nhao_edit1_finds_nihao() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_nhao.tsv");
+        std::fs::write(&tmp, "word\tfreq\tpinyin\n你好\t90000\tnihao\n").unwrap();
+        let lex = DatLexicon::from_bytes(compile_tsv_to_dat(&tmp).unwrap()).unwrap();
+        let syls = vec!["ni".into(), "hao".into()];
+        let cands = lex
+            .lookup_pinyin_opts("nhao", &syls, None, 0, LookupOpts::lean())
+            .unwrap();
+        assert!(
+            cands.iter().any(|c| c.text == "你好"),
+            "nhao edit1 → 你好: {:?}",
+            cands.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn exact_nihao_correction_not_first() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_nihao_first.tsv");
+        std::fs::write(
+            &tmp,
+            "word\tfreq\tpinyin\n你好\t90000\tnihao\n泥嚎\t80000\tnihao\n",
+        )
+        .unwrap();
+        let lex = DatLexicon::from_bytes(compile_tsv_to_dat(&tmp).unwrap()).unwrap();
+        let syls = vec!["ni".into(), "hao".into()];
+        let cands = lex
+            .lookup_pinyin_opts("nihao", &syls, None, 0, LookupOpts::lean())
+            .unwrap();
+        assert!(
+            !cands.is_empty() && !crate::rank::is_correction_cand(&cands[0]),
+            "exact nihao #0 must not be correction band: score={}",
+            cands[0].score
+        );
+        let _ = std::fs::remove_file(tmp);
     }
 }

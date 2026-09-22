@@ -1,0 +1,16 @@
+# Pronunciation fuzzy pairs for Mandarin pinyin (scheme-level, OTA-able).
+# Loaded into CorrectionTables; hot path never parses YAML.
+
+initial_pairs:
+  - [z, zh]
+  - [c, ch]
+  - [s, sh]
+  - [n, l]
+  - [f, h]
+
+final_pairs:
+  - [an, ang]
+  - [en, eng]
+  - [in, ing]
+
+uv_after: [l, n]

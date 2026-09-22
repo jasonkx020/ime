@@ -116,6 +116,15 @@ hotwords = "hotwords.csv"      # 可选
 allow = ["lexicon", "layout"]  # 不含 network、asr
 ```
 
+纠错表（可选，中文拼音包）：
+
+```toml
+[correction]
+fuzzy = "rules/pinyin_fuzzy.yaml"   # 方案级发音混淆对
+```
+
+临近键表写在 **每个 layout YAML** 的 `keyboard_neighbors:`（随布局定制，勿跨布局共用）。详见 [PINYIN_CORRECTION.md](PINYIN_CORRECTION.md)。
+
 构建时 `ime-pack build` 读取 `pack.toml`，生成 `manifest.fb`（字段与附录 C `LangPackManifest` 一致）。
 
 ---
