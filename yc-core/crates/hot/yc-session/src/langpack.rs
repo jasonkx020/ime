@@ -6,6 +6,9 @@ pub struct EnabledLangPack {
     pub lang_tag: String,
     pub default_scheme_id: String,
     pub default_layout_id: String,
+    pub symbol_layout_id: Option<String>,
+    pub shift_layout_id: Option<String>,
+    pub keyboard_height_dp: Option<u32>,
 }
 
 impl EnabledLangPack {

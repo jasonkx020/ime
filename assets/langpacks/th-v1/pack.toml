@@ -15,5 +15,10 @@ file = "schemes/th_latin.yaml"
 file = "lexicon/th_words.tsv"
 format = "dat"
 
+[layouts]
+symbol_layout_id = "layout_symbol"
+shift_layout_id = "layout_thai_shift"
+keyboard_height_dp = 228
+
 [build]
 strings = "strings/th.json"

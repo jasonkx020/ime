@@ -19,5 +19,10 @@ key_column = "pinyin"
 [correction]
 fuzzy = "rules/pinyin_fuzzy.yaml"
 
+[layouts]
+symbol_layout_id = "layout_symbol"
+shift_layout_id = "layout_pinyin26_shift"
+keyboard_height_dp = 267
+
 [build]
 strings = "strings/zh.json"

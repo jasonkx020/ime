@@ -125,6 +125,20 @@ fuzzy = "rules/pinyin_fuzzy.yaml"   # 方案级发音混淆对
 
 临近键表写在 **每个 layout YAML** 的 `keyboard_neighbors:`（随布局定制，勿跨布局共用）。详见 [PINYIN_CORRECTION.md](PINYIN_CORRECTION.md)。
 
+包级布局与键区高度（可选，Android 壳读取 `manifest.fb`）：
+
+```toml
+[layouts]
+symbol_layout_id = "layout_symbol"            # 123 / !#1 符号层
+shift_layout_id = "layout_pinyin26_shift"     # 可选；⇧ 副盘（越/泰/中文大写）
+keyboard_height_dp = 267                      # 键区高度 dp（不含候选顶栏）
+```
+
+- `symbol_layout_id` / `shift_layout_id` 对应本包 `layouts/<id>.yaml`，**须自包含**，不要跨包引用。
+- 中文 Shift 副盘字母键的 **`output` 必须为大写**（与 `label` 一致），例如 `{ label: "Q", output: "Q" }`。
+- 省略 `shift_layout_id` 时，壳可用运行时 `LayoutCaseShift`（如英文）。
+- 省略 `keyboard_height_dp` 时，壳回退到按布局 id 的启发式高度。
+
 构建时 `ime-pack build` 读取 `pack.toml`，生成 `manifest.fb`（字段与附录 C `LangPackManifest` 一致）。
 
 ---

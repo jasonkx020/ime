@@ -18,27 +18,32 @@ object LayoutLoader {
     private const val ACTION_SHIFT = 6
     private val cache = java.util.concurrent.ConcurrentHashMap<String, List<List<KeyDef>>>()
 
-    fun load(dataDir: File, layoutId: String): List<List<KeyDef>> {
-        cache[layoutId]?.let { return it }
+    fun load(dataDir: File, layoutId: String, preferredPackId: String? = null): List<List<KeyDef>> {
+        val cacheKey = if (preferredPackId.isNullOrBlank()) layoutId else "$preferredPackId/$layoutId"
+        cache[cacheKey]?.let { return it }
         val rows = if (isPinyinLayout(layoutId)) {
-            val fromPack = loadFromPack(dataDir, layoutId)
+            val fromPack = loadFromPack(dataDir, layoutId, preferredPackId)
             if (fromPack != null && fromPack.size >= 4) fromPack else Layout26Pinyin.rows
         } else {
-            loadFromPack(dataDir, layoutId) ?: Layout26Pinyin.rows
+            loadFromPack(dataDir, layoutId, preferredPackId) ?: Layout26Pinyin.rows
         }
-        cache[layoutId] = rows
+        cache[cacheKey] = rows
         return rows
     }
 
     /** 仅从语言包加载；找不到返回 null（不做 QWERTY 兜底）。 */
-    fun loadOrNull(dataDir: File, layoutId: String): List<List<KeyDef>>? =
-        loadFromPack(dataDir, layoutId)
+    fun loadOrNull(dataDir: File, layoutId: String, preferredPackId: String? = null): List<List<KeyDef>>? =
+        loadFromPack(dataDir, layoutId, preferredPackId)
 
     private fun isPinyinLayout(layoutId: String): Boolean =
         layoutId == "layout_pinyin26" || layoutId == "layout_26_pinyin"
 
-    private fun loadFromPack(dataDir: File, layoutId: String): List<List<KeyDef>>? {
-        val preferredPack = preferredPackForLayout(layoutId)
+    private fun loadFromPack(
+        dataDir: File,
+        layoutId: String,
+        preferredPackId: String? = null,
+    ): List<List<KeyDef>>? {
+        val preferredPack = preferredPackId ?: preferredPackForLayout(layoutId)
         // 1) 已解压目录：优先匹配语言相关 pack，再扫其余
         val langpacks = File(dataDir, "langpacks")
         if (langpacks.isDirectory) {

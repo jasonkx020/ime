@@ -10,6 +10,9 @@ pub struct LangPackSlot {
     pub display_name: String,
     pub default_scheme_id: String,
     pub default_layout_id: String,
+    pub symbol_layout_id: Option<String>,
+    pub shift_layout_id: Option<String>,
+    pub keyboard_height_dp: Option<u32>,
     pub install_path: PathBuf,
     pub lexicon_dat_rel: String,
     pub strings_rel: Option<String>,
@@ -30,6 +33,9 @@ impl LangPackSlot {
             default_layout_id: default_scheme
                 .map(|s| s.default_layout_id.clone())
                 .unwrap_or_else(|| "layout_qwerty".into()),
+            symbol_layout_id: manifest.layouts.symbol_layout_id.clone(),
+            shift_layout_id: manifest.layouts.shift_layout_id.clone(),
+            keyboard_height_dp: manifest.layouts.keyboard_height_dp,
             install_path,
             lexicon_dat_rel: manifest.lexicon.effective_dat_path().to_string(),
             strings_rel: manifest.strings_path.clone(),

@@ -40,6 +40,9 @@ fn switch_lang_pack(pack_dir: &str, key: char) {
         lang_tag: slot.lang_tag.clone(),
         default_scheme_id: slot.default_scheme_id.clone(),
         default_layout_id: slot.default_layout_id.clone(),
+        symbol_layout_id: slot.symbol_layout_id.clone(),
+        shift_layout_id: slot.shift_layout_id.clone(),
+        keyboard_height_dp: slot.keyboard_height_dp,
     }]);
 
     let mut sessions = yc_session::SessionManager::new();

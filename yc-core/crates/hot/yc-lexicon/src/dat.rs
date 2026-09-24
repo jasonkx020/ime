@@ -678,6 +678,13 @@ impl DatLexicon {
                 cands.push(n);
             }
         }
+        crate::cand_gen::ensure_single_char_fallback(
+            self,
+            &composing,
+            syllables,
+            &hyps,
+            &mut cands,
+        );
         attach_spans(self, &composing, syllables, &mut cands);
         rank_candidates(&mut cands);
         Some(cands)
@@ -1964,6 +1971,76 @@ word\tfreq\tpinyin
             !cands.is_empty() && !crate::rank::is_correction_cand(&cands[0]),
             "exact nihao #0 must not be correction band: score={}",
             cands[0].score
+        );
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn single_char_fallback_blblbl_lean_and_instant() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_blblbl_fallback.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+不\t90000\tbu
+吧\t80000\tba
+北\t70000\tbei
+你好\t60000\tnihao
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let lex = DatLexicon::from_bytes(compile_tsv_to_dat(&tmp).unwrap()).unwrap();
+        let syls = vec![
+            "bu".into(),
+            "ba".into(),
+            "bei".into(),
+            "ni".into(),
+            "hao".into(),
+        ];
+        let composing = "blblblblblblbl";
+        for opts in [LookupOpts::lean(), LookupOpts::instant()] {
+            let cands = lex
+                .lookup_pinyin_opts(composing, &syls, None, 0, opts)
+                .unwrap();
+            let single = cands
+                .iter()
+                .find(|c| c.text.chars().count() == 1 && c.code_len == 1);
+            assert!(
+                single.is_some(),
+                "blblbl… must yield code_len=1 single char, got {:?}",
+                cands.iter().map(|c| (&c.text, c.code_len)).collect::<Vec<_>>()
+            );
+        }
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn single_char_fallback_does_not_steal_nihao_or_ta() {
+        let tmp = std::env::temp_dir().join("yc_lexicon_fallback_no_steal.tsv");
+        let tsv = "\
+word\tfreq\tpinyin
+你好\t90000\tnihao
+你\t5000\tni
+他\t95000\tta
+台\t1000\tt
+";
+        std::fs::write(&tmp, tsv).unwrap();
+        let lex = DatLexicon::from_bytes(compile_tsv_to_dat(&tmp).unwrap()).unwrap();
+        let syls = vec!["ni".into(), "hao".into(), "ta".into()];
+
+        let nihao = lex
+            .lookup_pinyin_opts("nihao", &syls, None, 0, LookupOpts::lean())
+            .unwrap();
+        assert_eq!(nihao[0].text, "你好", "nihao #0 must stay whole-word");
+        assert!(
+            nihao[0].code_len != 1 || nihao[0].text.chars().count() != 1,
+            "nihao #0 must not be L4 fallback single"
+        );
+
+        let ta = lex
+            .lookup_pinyin_opts("ta", &syls, None, 0, LookupOpts::lean())
+            .unwrap();
+        assert_eq!(ta[0].text, "他", "ta #0 must stay exact single");
+        assert!(
+            !(ta[0].code_len == 1 && ta[0].text == "台"),
+            "ta must not be stolen by initial-key fallback"
         );
         let _ = std::fs::remove_file(tmp);
     }

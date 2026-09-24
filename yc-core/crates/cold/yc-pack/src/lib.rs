@@ -10,7 +10,8 @@ pub use build::{
     install_pack_to_dir, PackBuildOutput,
 };
 pub use manifest::{
-    manifest_from_bytes, manifest_to_bytes, LangPackManifest, LexiconRef, PackScheme, PackToml,
+    manifest_from_bytes, manifest_to_bytes, LangPackManifest, LexiconRef, PackLayouts, PackScheme,
+    PackToml,
 };
 pub use skin::{SkinColors, SkinManifest, SkinToml};
 pub use verify::{sha256_file, verify_pack_signature};

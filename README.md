@@ -11,21 +11,14 @@
 
 
 | 文档 | 说明 |
-
 |------|------|
-
 | [docs/KEYBOARD_UI_DESIGN.md](docs/KEYBOARD_UI_DESIGN.md) | **键盘界面设计规范**：三星输入法 Demo 基准、HandwritingPad、AiAssistPanel、桌面差异 |
-
 | [docs/IME_ARCHITECTURE.md](docs/IME_ARCHITECTURE.md) | **完整设计方案**（v1.9）：六端架构、Rust 核心、语言包 OTA、AI 场景助手、手写板 |
-
+c:\Users\Administrator\Projects\lumen-md\README.md
 | [docs/HANDWRITING_DESIGN.md](docs/HANDWRITING_DESIGN.md) | **手写板设计规范**：笔迹格式、端云识别、隐私门禁、性能指标、M2.5 验收 |
-
 | [docs/AI_ASSIST_DESIGN.md](docs/AI_ASSIST_DESIGN.md) | **AI 场景助手规范**：智能回复、高情商话术、场景 Prompt、AiPack |
-
 | [docs/LANGPACK_AUTHORING.md](docs/LANGPACK_AUTHORING.md) | **语言包创作规范**：源格式（YAML/TOML/TSV）、词库 MMAP、布局、工具链 |
-
 | [docs/RUST_PLATFORM_INTEGRATION.md](docs/RUST_PLATFORM_INTEGRATION.md) | **Rust 六端对接**：C ABI、移动三端（JNI / xcframework / NAPI）+ 桌面三端（TSF / IMK / IBus·Fcitx5） |
-
 | [docs/SOURCE_NAMING_CONVENTIONS.md](docs/SOURCE_NAMING_CONVENTIONS.md) | **源代码命名规范**：`yc` 前缀、六端命名、FFI、迁移对照 |
 | [docs/M1_SMOKE.md](docs/M1_SMOKE.md) | **M1 六端 smoke**：热路径拼音上屏 + Samsung 皮肤验收 |
 

@@ -1,5 +1,5 @@
-layout_id: layout_pinyin26
-name: 拼音美式全键盘
+layout_id: layout_pinyin26_shift
+name: 拼音美式全键盘（大写）
 keyboard_neighbors:
   q: [w, a, s]
   w: [q, e, a, s, d]
@@ -38,33 +38,33 @@ rows:
     - { label: "8", output: "8", width: 1.0 }
     - { label: "9", output: "9", width: 1.0 }
     - { label: "0", output: "0", width: 1.0 }
-  - - { label: "q", output: "q", width: 1.0 }
-    - { label: "w", output: "w", width: 1.0 }
-    - { label: "e", output: "e", width: 1.0 }
-    - { label: "r", output: "r", width: 1.0 }
-    - { label: "t", output: "t", width: 1.0 }
-    - { label: "y", output: "y", width: 1.0 }
-    - { label: "u", output: "u", width: 1.0 }
-    - { label: "i", output: "i", width: 1.0 }
-    - { label: "o", output: "o", width: 1.0 }
-    - { label: "p", output: "p", width: 1.0 }
-  - - { label: "a", output: "a", width: 1.0 }
-    - { label: "s", output: "s", width: 1.0 }
-    - { label: "d", output: "d", width: 1.0 }
-    - { label: "f", output: "f", width: 1.0 }
-    - { label: "g", output: "g", width: 1.0 }
-    - { label: "h", output: "h", width: 1.0 }
-    - { label: "j", output: "j", width: 1.0 }
-    - { label: "k", output: "k", width: 1.0 }
-    - { label: "l", output: "l", width: 1.0 }
+  - - { label: "Q", output: "Q", width: 1.0 }
+    - { label: "W", output: "W", width: 1.0 }
+    - { label: "E", output: "E", width: 1.0 }
+    - { label: "R", output: "R", width: 1.0 }
+    - { label: "T", output: "T", width: 1.0 }
+    - { label: "Y", output: "Y", width: 1.0 }
+    - { label: "U", output: "U", width: 1.0 }
+    - { label: "I", output: "I", width: 1.0 }
+    - { label: "O", output: "O", width: 1.0 }
+    - { label: "P", output: "P", width: 1.0 }
+  - - { label: "A", output: "A", width: 1.0 }
+    - { label: "S", output: "S", width: 1.0 }
+    - { label: "D", output: "D", width: 1.0 }
+    - { label: "F", output: "F", width: 1.0 }
+    - { label: "G", output: "G", width: 1.0 }
+    - { label: "H", output: "H", width: 1.0 }
+    - { label: "J", output: "J", width: 1.0 }
+    - { label: "K", output: "K", width: 1.0 }
+    - { label: "L", output: "L", width: 1.0 }
   - - { label: "⇧", action: "shift", width: 1.4 }
-    - { label: "z", output: "z", width: 1.0 }
-    - { label: "x", output: "x", width: 1.0 }
-    - { label: "c", output: "c", width: 1.0 }
-    - { label: "v", output: "v", width: 1.0 }
-    - { label: "b", output: "b", width: 1.0 }
-    - { label: "n", output: "n", width: 1.0 }
-    - { label: "m", output: "m", width: 1.0 }
+    - { label: "Z", output: "Z", width: 1.0 }
+    - { label: "X", output: "X", width: 1.0 }
+    - { label: "C", output: "C", width: 1.0 }
+    - { label: "V", output: "V", width: 1.0 }
+    - { label: "B", output: "B", width: 1.0 }
+    - { label: "N", output: "N", width: 1.0 }
+    - { label: "M", output: "M", width: 1.0 }
     - { label: "⌫", action: "backspace", width: 1.4 }
   - - { label: "!#1", action: "switch_layout", width: 1.15 }
     - { label: "🌐", action: "switch_lang", width: 1.15 }

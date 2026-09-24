@@ -228,6 +228,9 @@ impl CoreState {
                 lang_tag: slot.lang_tag.clone(),
                 default_scheme_id: slot.default_scheme_id.clone(),
                 default_layout_id: slot.default_layout_id.clone(),
+                symbol_layout_id: slot.symbol_layout_id.clone(),
+                shift_layout_id: slot.shift_layout_id.clone(),
+                keyboard_height_dp: slot.keyboard_height_dp,
             });
         }
         self.services.scheduler.set_enabled_packs(enabled);

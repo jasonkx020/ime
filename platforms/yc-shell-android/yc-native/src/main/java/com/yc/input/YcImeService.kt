@@ -26,6 +26,7 @@ import com.yc.input.ui.KeyboardSnapshot
 import com.yc.input.ui.LangOption
 import com.yc.input.ui.LayoutLoader
 import com.yc.input.ui.ModeOption
+import com.yc.input.ui.PackLayoutCatalog
 import com.yc.input.ui.PhraseDeckPanel
 import com.yc.input.ui.SkinRegistry
 import com.yc.input.ui.ThemeTokens
@@ -421,12 +422,9 @@ class YcImeService : InputMethodService() {
         }
     }
 
-    private fun packIdForLang(code: String): String = when (code) {
-        "en" -> "en-v1"
-        "vi" -> "vi-v1"
-        "th" -> "th-v1"
-        else -> "zh-pack-v1"
-    }
+    private fun packIdForLang(code: String): String = PackLayoutCatalog.packIdForLang(code)
+
+    private fun packLayouts() = PackLayoutCatalog.forLang(filesDir, currentLangCode)
 
     /**
      * 已解压且 stamp 与 imepack 字节数一致则跳过 copy/unzip。
@@ -436,7 +434,7 @@ class YcImeService : InputMethodService() {
         val packFile = File(filesDir, "$packId.imepack")
         val extracted = File(filesDir, "langpacks/$packId")
         val stamp = File(extracted, ".yc_pack_stamp")
-        val rev = "1"
+        val rev = "2"
         try {
             if (extracted.isDirectory && stamp.isFile && packFile.isFile) {
                 val recorded = stamp.readText().trim()
@@ -450,6 +448,7 @@ class YcImeService : InputMethodService() {
                 packFile.outputStream().use { output -> input.copyTo(output) }
             }
             val rc = YcNative.ycCoreInstallLangpack(packFile.absolutePath)
+            PackLayoutCatalog.invalidate(packId)
             Log.i(TAG, "ycCoreInstallLangpack $packId -> $rc bytes=$copied")
             if (extracted.isDirectory) {
                 stamp.writeText("$rev:${packFile.length()}")
@@ -560,7 +559,17 @@ class YcImeService : InputMethodService() {
                     }
                     else -> {
                         val code = key.keyCode ?: text.firstOrNull()?.code ?: return
-                        if (isEngineLetter(code) || (asciiMode && isAsciiComposable(code))) {
+                        // Shift 大写：引擎会把 A–Z 压成小写，故绕过查词直接上屏（zh / en）
+                        val isAsciiUpper =
+                            text.any { it in 'A'..'Z' } || code.toChar() in 'A'..'Z'
+                        if (isAsciiUpper) {
+                            if (candExpanded) collapseCandExpand()
+                            if (hasInputCache()) {
+                                discardComposing()
+                                clearInputCache()
+                            }
+                            currentInputConnection?.commitText(text, 1)
+                        } else if (isEngineLetter(code) || (asciiMode && isAsciiComposable(code))) {
                             if (candExpanded) collapseCandExpand()
                             if (isEngineLetter(code)) {
                                 submit(YcNative.ACTION_KEY_PRESS, code)
@@ -585,10 +594,7 @@ class YcImeService : InputMethodService() {
     }
 
     private fun onShiftKey() {
-        when (currentLangCode) {
-            "zh" -> onLangPicked(LANG_OPTIONS.first { it.code == "en" })
-            else -> panel?.cycleShift()
-        }
+        panel?.cycleShift()
     }
 
     private fun enterSymbolLayer(source: String) {
@@ -601,8 +607,10 @@ class YcImeService : InputMethodService() {
             handwritingActive = false
         }
         val back = if (source == "handwriting" && allowsHandwriting()) "手写" else "ABC"
-        val symbolLayoutId = if (currentLangCode == "en") "layout_en_symbol" else "layout_symbol"
-        val packSymbol = LayoutLoader.loadOrNull(filesDir, symbolLayoutId)
+        val cfg = packLayouts()
+        val symbolLayoutId = cfg.symbolLayoutId
+            ?: if (currentLangCode == "en") "layout_en_symbol" else "layout_symbol"
+        val packSymbol = LayoutLoader.loadOrNull(filesDir, symbolLayoutId, cfg.packId)
         if (packSymbol != null && packSymbol.size >= 4) {
             val patched = packSymbol.map { row ->
                 row.map { key ->
@@ -610,6 +618,7 @@ class YcImeService : InputMethodService() {
                 }
             }
             panel?.setUseZhPunct(currentLangCode == "zh")
+            panel?.setKeyboardHeightDp(cfg.keyboardHeightDp)
             panel?.setLayoutRows(patched, null, symbolLayoutId, -1)
         } else {
             panel?.showSymbolLayer(back)
@@ -1569,26 +1578,26 @@ class YcImeService : InputMethodService() {
 
     private fun reloadLayout(layoutId: String) {
         val t0 = android.os.SystemClock.elapsedRealtime()
+        val cfg = packLayouts()
         currentLayoutId = layoutId
-        if (layoutId != "layout_symbol" && layoutId != "layout_en_symbol") {
+        val symbolIds = setOfNotNull(cfg.symbolLayoutId, "layout_symbol", "layout_en_symbol")
+        if (layoutId !in symbolIds) {
             letterLayoutId = layoutId
         }
-        val isThai = layoutId.contains("thai")
-        val isVi = layoutId.contains("vietnamese")
-        val rows = LayoutLoader.load(filesDir, layoutId)
-        val shiftAlt = when {
-            isThai -> LayoutLoader.load(filesDir, "layout_thai_shift")
-            isVi -> LayoutLoader.load(filesDir, "layout_vietnamese_shift")
-            else -> null
-        }
+        val packId = cfg.packId
+        val shiftId = cfg.shiftLayoutId
+        val rows = LayoutLoader.load(filesDir, layoutId, packId)
+        val shiftAlt = shiftId?.let { LayoutLoader.loadOrNull(filesDir, it, packId) }
+        val isThai = layoutId.contains("thai") || shiftId?.contains("thai") == true
+        val isVi = layoutId.contains("vietnamese") || shiftId?.contains("vietnamese") == true
         val base = when {
-            layoutId == "layout_thai_shift" -> LayoutLoader.load(filesDir, "layout_thai")
-            layoutId == "layout_vietnamese_shift" -> LayoutLoader.load(filesDir, "layout_vietnamese")
+            shiftId != null && layoutId == shiftId -> {
+                LayoutLoader.load(filesDir, cfg.letterLayoutId, packId)
+            }
             else -> rows
         }
-        val resolvedId = when (layoutId) {
-            "layout_thai_shift" -> "layout_thai"
-            "layout_vietnamese_shift" -> "layout_vietnamese"
+        val resolvedId = when {
+            shiftId != null && layoutId == shiftId -> cfg.letterLayoutId
             else -> layoutId
         }
         val viSpecial = if (resolvedId.contains("vietnamese")) 0 else -1
@@ -1600,17 +1609,15 @@ class YcImeService : InputMethodService() {
                 else -> "latn"
             },
         )
+        panel?.setKeyboardHeightDp(cfg.keyboardHeightDp)
         panel?.setLayoutRows(
-            rows = when (layoutId) {
-                "layout_thai_shift", "layout_vietnamese_shift" -> base
-                else -> rows
-            },
+            rows = if (shiftId != null && layoutId == shiftId) base else rows,
             shiftAltRows = shiftAlt,
             layoutId = resolvedId,
             viSpecialRowIndex = viSpecial,
         )
         updateModeLabel()
-        Log.i(TAG, "reloadLayout $layoutId elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms")
+        Log.i(TAG, "reloadLayout $layoutId shift=$shiftId h=${cfg.keyboardHeightDp} elapsed=${android.os.SystemClock.elapsedRealtime() - t0}ms")
     }
 
     /** @return true if a non-empty Commit or DeleteSurrounding was applied */
@@ -1923,13 +1930,9 @@ class YcImeService : InputMethodService() {
         updateModeLabel()
     }
 
-    /** 各语种默认字母布局 id（与 pack.toml default_layout_id 对齐）。 */
-    private fun layoutIdForLang(code: String): String = when (code) {
-        "en" -> "layout_en_qwerty"
-        "vi" -> "layout_vietnamese"
-        "th" -> "layout_thai"
-        else -> "layout_pinyin26"
-    }
+    /** 各语种默认字母布局 id（来自 pack.toml / manifest）。 */
+    private fun layoutIdForLang(code: String): String =
+        PackLayoutCatalog.forLang(filesDir, code).letterLayoutId
 
     private fun switchLangPack(packId: String) {
         val hash = hashPackId(packId)

@@ -9,10 +9,11 @@ use crate::cand_tiers::{score_l3, score_l4, SCORE_L3};
 use crate::dat::DatLexicon;
 use crate::pinyin_match::is_orphan_final;
 use crate::rank::rank_candidates;
-use crate::seg_hypotheses::{HypKind, SegHypotheses};
+use crate::seg_hypotheses::{HypKind, SegHypotheses, SegSeverity};
 use crate::span_resolve::span_key_variants;
 
 const WORDS_PER_SPAN: usize = 8;
+const SINGLE_CHAR_FALLBACK_CAP: usize = 8;
 
 /// Fill `cands` from structural hypotheses (Mono / Multi / Initial / Intra).
 /// Only emits edges that start at byte 0 (prefix residual chain).
@@ -56,6 +57,75 @@ pub fn gen_from_hyps(
         }
     }
     rank_candidates(cands);
+}
+
+/// L4 single-char兜底：池空或 Seg L3 且无 `code_len==1` 单字时，按首字母查 DAT。
+/// `code_len = 1`，分数落在 L4，不抢已有 L0–L3 正常带首位。
+pub fn ensure_single_char_fallback(
+    lex: &DatLexicon,
+    composing: &str,
+    syllables: &[String],
+    hyps: &SegHypotheses,
+    cands: &mut Vec<Candidate>,
+) {
+    let composing = composing.trim();
+    if composing.is_empty() {
+        return;
+    }
+    let has_single = cands
+        .iter()
+        .any(|c| c.text.chars().count() == 1 && c.code_len == 1);
+    let need = cands.is_empty()
+        || (!has_single && matches!(hyps.severity, Some(SegSeverity::L3)));
+    if !need {
+        return;
+    }
+
+    let letters: Vec<char> = composing
+        .chars()
+        .filter(|c| c.is_ascii_lowercase())
+        .take(2)
+        .collect();
+    if letters.is_empty() {
+        return;
+    }
+
+    for (li, ch) in letters.iter().enumerate() {
+        // Second letter only when pool still empty after first.
+        if li > 0 && !cands.is_empty() {
+            break;
+        }
+        let key = ch.to_string();
+        let mut words = lex.exact_key_words(&key);
+        if words.iter().all(|(_, t)| t.chars().count() != 1) {
+            // Packs usually key 不 as `bu`, not `b` — scan one-syllable keys under initial.
+            words = lex.jianpin_span_words(&key, &key, syllables, 1);
+        }
+        words.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        let mut rank = 0usize;
+        for (_freq, text) in words {
+            if text.chars().count() != 1 {
+                continue;
+            }
+            if cands.iter().any(|c| c.text == text) {
+                continue;
+            }
+            cands.push(Candidate {
+                id: 0,
+                text,
+                source: CandidateSource::Lexicon,
+                score: score_l4(rank),
+                code_len: 1,
+            });
+            rank += 1;
+            if rank >= SINGLE_CHAR_FALLBACK_CAP {
+                break;
+            }
+        }
+        if rank > 0 {
+            break;
+        }
+    }
 }
 
 fn words_for_span(lex: &DatLexicon, key: &str) -> Vec<(u32, String)> {

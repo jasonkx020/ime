@@ -15,5 +15,10 @@ file = "schemes/en_latin.yaml"
 file = "lexicon/en_words.tsv"
 format = "dat"
 
+[layouts]
+symbol_layout_id = "layout_en_symbol"
+shift_layout_id = "layout_en_qwerty_shift"
+keyboard_height_dp = 267
+
 [build]
 strings = "strings/en.json"

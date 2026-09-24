@@ -1,0 +1,47 @@
+layout_id: layout_en_qwerty_shift
+name: US QWERTY (Shift)
+rows:
+  - - { label: "1", output: "1", width: 1.0 }
+    - { label: "2", output: "2", width: 1.0 }
+    - { label: "3", output: "3", width: 1.0 }
+    - { label: "4", output: "4", width: 1.0 }
+    - { label: "5", output: "5", width: 1.0 }
+    - { label: "6", output: "6", width: 1.0 }
+    - { label: "7", output: "7", width: 1.0 }
+    - { label: "8", output: "8", width: 1.0 }
+    - { label: "9", output: "9", width: 1.0 }
+    - { label: "0", output: "0", width: 1.0 }
+  - - { label: "Q", output: "Q", width: 1.0 }
+    - { label: "W", output: "W", width: 1.0 }
+    - { label: "E", output: "E", width: 1.0 }
+    - { label: "R", output: "R", width: 1.0 }
+    - { label: "T", output: "T", width: 1.0 }
+    - { label: "Y", output: "Y", width: 1.0 }
+    - { label: "U", output: "U", width: 1.0 }
+    - { label: "I", output: "I", width: 1.0 }
+    - { label: "O", output: "O", width: 1.0 }
+    - { label: "P", output: "P", width: 1.0 }
+  - - { label: "A", output: "A", width: 1.0 }
+    - { label: "S", output: "S", width: 1.0 }
+    - { label: "D", output: "D", width: 1.0 }
+    - { label: "F", output: "F", width: 1.0 }
+    - { label: "G", output: "G", width: 1.0 }
+    - { label: "H", output: "H", width: 1.0 }
+    - { label: "J", output: "J", width: 1.0 }
+    - { label: "K", output: "K", width: 1.0 }
+    - { label: "L", output: "L", width: 1.0 }
+  - - { label: "⇧", action: "shift", width: 1.4 }
+    - { label: "Z", output: "Z", width: 1.0 }
+    - { label: "X", output: "X", width: 1.0 }
+    - { label: "C", output: "C", width: 1.0 }
+    - { label: "V", output: "V", width: 1.0 }
+    - { label: "B", output: "B", width: 1.0 }
+    - { label: "N", output: "N", width: 1.0 }
+    - { label: "M", output: "M", width: 1.0 }
+    - { label: "⌫", action: "backspace", width: 1.4 }
+  - - { label: "?123", action: "switch_layout", width: 1.15 }
+    - { label: "🌐", action: "switch_lang", width: 1.15 }
+    - { label: ",", output: ",", width: 0.9 }
+    - { label: "space", output: " ", width: 3.4 }
+    - { label: ".", output: ".", width: 0.9 }
+    - { label: "go", output: "\n", width: 1.4 }

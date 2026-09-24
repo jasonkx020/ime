@@ -11,35 +11,33 @@ rows:
     - { label: "8", output: "8", width: 1.0 }
     - { label: "9", output: "9", width: 1.0 }
     - { label: "0", output: "0", width: 1.0 }
-    - { label: "-", output: "-", width: 1.0 }
-    - { label: "=", output: "=", width: 1.0 }
-  - - { label: "Q", output: "q", width: 1.0 }
-    - { label: "W", output: "w", width: 1.0 }
-    - { label: "E", output: "e", width: 1.0 }
-    - { label: "R", output: "r", width: 1.0 }
-    - { label: "T", output: "t", width: 1.0 }
-    - { label: "Y", output: "y", width: 1.0 }
-    - { label: "U", output: "u", width: 1.0 }
-    - { label: "I", output: "i", width: 1.0 }
-    - { label: "O", output: "o", width: 1.0 }
-    - { label: "P", output: "p", width: 1.0 }
-  - - { label: "A", output: "a", width: 1.0 }
-    - { label: "S", output: "s", width: 1.0 }
-    - { label: "D", output: "d", width: 1.0 }
-    - { label: "F", output: "f", width: 1.0 }
-    - { label: "G", output: "g", width: 1.0 }
-    - { label: "H", output: "h", width: 1.0 }
-    - { label: "J", output: "j", width: 1.0 }
-    - { label: "K", output: "k", width: 1.0 }
-    - { label: "L", output: "l", width: 1.0 }
+  - - { label: "q", output: "q", width: 1.0 }
+    - { label: "w", output: "w", width: 1.0 }
+    - { label: "e", output: "e", width: 1.0 }
+    - { label: "r", output: "r", width: 1.0 }
+    - { label: "t", output: "t", width: 1.0 }
+    - { label: "y", output: "y", width: 1.0 }
+    - { label: "u", output: "u", width: 1.0 }
+    - { label: "i", output: "i", width: 1.0 }
+    - { label: "o", output: "o", width: 1.0 }
+    - { label: "p", output: "p", width: 1.0 }
+  - - { label: "a", output: "a", width: 1.0 }
+    - { label: "s", output: "s", width: 1.0 }
+    - { label: "d", output: "d", width: 1.0 }
+    - { label: "f", output: "f", width: 1.0 }
+    - { label: "g", output: "g", width: 1.0 }
+    - { label: "h", output: "h", width: 1.0 }
+    - { label: "j", output: "j", width: 1.0 }
+    - { label: "k", output: "k", width: 1.0 }
+    - { label: "l", output: "l", width: 1.0 }
   - - { label: "⇧", action: "shift", width: 1.4 }
-    - { label: "Z", output: "z", width: 1.0 }
-    - { label: "X", output: "x", width: 1.0 }
-    - { label: "C", output: "c", width: 1.0 }
-    - { label: "V", output: "v", width: 1.0 }
-    - { label: "B", output: "b", width: 1.0 }
-    - { label: "N", output: "n", width: 1.0 }
-    - { label: "M", output: "m", width: 1.0 }
+    - { label: "z", output: "z", width: 1.0 }
+    - { label: "x", output: "x", width: 1.0 }
+    - { label: "c", output: "c", width: 1.0 }
+    - { label: "v", output: "v", width: 1.0 }
+    - { label: "b", output: "b", width: 1.0 }
+    - { label: "n", output: "n", width: 1.0 }
+    - { label: "m", output: "m", width: 1.0 }
     - { label: "⌫", action: "backspace", width: 1.4 }
   - - { label: "?123", action: "switch_layout", width: 1.15 }
     - { label: "🌐", action: "switch_lang", width: 1.15 }

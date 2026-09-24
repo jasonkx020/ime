@@ -22,5 +22,10 @@ file = "schemes/vi_telex.yaml"
 file = "lexicon/vi_words.tsv"
 format = "dat"
 
+[layouts]
+symbol_layout_id = "layout_symbol"
+shift_layout_id = "layout_vietnamese_shift"
+keyboard_height_dp = 324
+
 [build]
 strings = "strings/vi.json"

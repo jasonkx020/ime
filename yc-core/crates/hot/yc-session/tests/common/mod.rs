@@ -42,6 +42,9 @@ pub fn setup_zh_pack(scheduler: &mut Scheduler) -> String {
         lang_tag: "zh".into(),
         default_scheme_id: "pinyin_full".into(),
         default_layout_id: "layout_pinyin26".into(),
+        symbol_layout_id: Some("layout_symbol".into()),
+        shift_layout_id: Some("layout_pinyin26_shift".into()),
+        keyboard_height_dp: Some(267),
     }]);
     scheduler
         .factory_mut()

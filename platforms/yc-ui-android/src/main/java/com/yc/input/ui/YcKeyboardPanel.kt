@@ -36,6 +36,8 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
 
     private val toolbarCollapsedH = dp(56)
     private var keyH = dp(280)
+    /** Pack-declared key-area height; null → heuristic in [adjustKeyHeight]. */
+    private var packKeyboardHeightDp: Int? = null
 
     private var handwritingMode = false
     private val inputSlotLp: LayoutParams
@@ -129,6 +131,12 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         keyView.setScriptHint(hint)
     }
 
+    /** Key-area height from langpack `[layouts].keyboard_height_dp`. */
+    fun setKeyboardHeightDp(dp: Int?) {
+        packKeyboardHeightDp = dp?.takeIf { it > 0 }
+        adjustKeyHeight()
+    }
+
     fun setLayoutRows(
         rows: List<List<KeyDef>>,
         shiftAltRows: List<List<KeyDef>>? = null,
@@ -140,7 +148,7 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
         shiftRows = shiftAltRows?.let { LayoutCaseShift.applyPunctuation(ensureMicKey(it), useZhPunct) }
         viSpecialRow = viSpecialRowIndex
         shiftState = ShiftState.Off
-        inSymbolLayer = layoutId == "layout_symbol"
+        inSymbolLayer = layoutId == "layout_symbol" || layoutId == "layout_en_symbol"
         refreshKeyDisplay()
         adjustKeyHeight()
     }
@@ -246,19 +254,24 @@ class YcKeyboardPanel(context: Context) : LinearLayout(context), UiBinder {
     }
 
     private fun adjustKeyHeight() {
-        val rows = when {
-            inSymbolLayer -> 5
-            layoutId.contains("vietnamese") -> 6
-            layoutId.contains("thai") -> 4
-            else -> 5
+        val packH = packKeyboardHeightDp
+        if (packH != null && packH > 0) {
+            keyH = dp(packH)
+        } else {
+            val rows = when {
+                inSymbolLayer -> 5
+                layoutId.contains("vietnamese") -> 6
+                layoutId.contains("thai") -> 4
+                else -> 5
+            }
+            // 泰/越键更多，略增高行距预算
+            val rowBudget = when {
+                layoutId.contains("vietnamese") -> 52
+                layoutId.contains("thai") -> 54
+                else -> 51
+            }
+            keyH = dp(12 + rows * rowBudget)
         }
-        // 泰/越键更多，略增高行距预算
-        val rowBudget = when {
-            layoutId.contains("vietnamese") -> 52
-            layoutId.contains("thai") -> 54
-            else -> 51
-        }
-        keyH = dp(12 + rows * rowBudget)
         val lp = overlayHost.layoutParams as LayoutParams
         if (lp.height != keyH && !handwritingMode) {
             lp.height = keyH

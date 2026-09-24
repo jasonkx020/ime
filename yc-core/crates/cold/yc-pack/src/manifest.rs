@@ -36,6 +36,18 @@ impl LexiconRef {
     }
 }
 
+/// Pack-level layout & geometry (symbol / shift / key-area height).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackLayouts {
+    #[serde(default)]
+    pub symbol_layout_id: Option<String>,
+    #[serde(default)]
+    pub shift_layout_id: Option<String>,
+    /// Key-area height in dp (IME overlay, not toolbar).
+    #[serde(default)]
+    pub keyboard_height_dp: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LangPackManifest {
     pub id: String,
@@ -51,6 +63,8 @@ pub struct LangPackManifest {
     pub layout_ids: Vec<String>,
     #[serde(default = "default_engine")]
     pub engine: String,
+    #[serde(default)]
+    pub layouts: PackLayouts,
 }
 
 fn default_engine() -> String {
@@ -68,6 +82,8 @@ pub struct PackToml {
     pub lexicon: LexiconRef,
     #[serde(default)]
     pub build: Option<PackBuildSection>,
+    #[serde(default)]
+    pub layouts: PackLayouts,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,6 +107,7 @@ impl PackToml {
             strings_path,
             layout_ids: Vec::new(),
             engine: "data_driven".into(),
+            layouts: self.layouts.clone(),
         }
     }
 }
@@ -101,4 +118,46 @@ pub fn manifest_to_bytes(m: &LangPackManifest) -> Vec<u8> {
 
 pub fn manifest_from_bytes(bytes: &[u8]) -> Result<LangPackManifest, serde_json::Error> {
     serde_json::from_slice(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pack_toml_layouts_roundtrip_to_manifest() {
+        let toml = r#"
+id = "zh-pack-v1"
+version = 3
+min_host_version = "0.1.0"
+lang = "zh"
+display_name = "中文拼音"
+
+[[schemes]]
+id = "pinyin_full"
+name = "全拼"
+default_layout_id = "layout_pinyin26"
+file = "schemes/pinyin_full.yaml"
+
+[lexicon]
+file = "lexicon/zh_words.tsv"
+format = "dat"
+
+[layouts]
+symbol_layout_id = "layout_symbol"
+shift_layout_id = "layout_pinyin26_shift"
+keyboard_height_dp = 267
+"#;
+        let pack: PackToml = toml::from_str(toml).expect("parse");
+        let m = pack.to_manifest();
+        assert_eq!(m.layouts.symbol_layout_id.as_deref(), Some("layout_symbol"));
+        assert_eq!(
+            m.layouts.shift_layout_id.as_deref(),
+            Some("layout_pinyin26_shift")
+        );
+        assert_eq!(m.layouts.keyboard_height_dp, Some(267));
+        let bytes = manifest_to_bytes(&m);
+        let back = manifest_from_bytes(&bytes).expect("json");
+        assert_eq!(back.layouts, m.layouts);
+    }
 }
